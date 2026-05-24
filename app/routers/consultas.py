@@ -11,29 +11,13 @@ from app.core.responses import error_response, ok
 from app.db.database import get_db
 from app.models.db_models import Cita, Consulta, Paciente
 from app.services.ai import AIService, ServiceError
-from app.services.clinical_context import (
-    apply_prior_clinical_safety,
-    build_prior_context,
-    fetch_prior_historiales,
-)
-from app.services.medicamentos import MedicamentosService
+from app.services.clinical_context import build_prior_context, fetch_prior_historiales
+from app.services.clinical_enrichment import enrich_historial_for_patient
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/consultas", tags=["consultas"])
 _ai = AIService()
-
-
-def _enrich_with_patient_history(
-    db: Session,
-    paciente: Paciente,
-    historial_dict: dict,
-    prior_historiales: list,
-) -> dict:
-    allergy_terms = apply_prior_clinical_safety(historial_dict, prior_historiales)
-    return MedicamentosService().enrich_historial(
-        db, paciente.eps_id, historial_dict, allergy_terms=allergy_terms
-    )
 
 
 def _save_audio(audio_bytes: bytes, mime_type: str) -> str:
@@ -101,9 +85,8 @@ async def procesar_consulta(
             logger.exception("Historial regeneration failed for existing consulta %s", existing_consulta.id)
             return error_response("AI_ERROR", "Error al regenerar el historial.", 502)
 
-        historial_dict = historial_clinico.model_dump(mode="json")
-        historial_dict = _enrich_with_patient_history(
-            db, paciente, historial_dict, prior_historiales
+        historial_dict = enrich_historial_for_patient(
+            db, paciente_id, historial_clinico.model_dump(mode="json")
         )
         return ok(
             {
@@ -164,9 +147,8 @@ async def procesar_consulta(
         logger.exception("Historial generation failed")
         return error_response("AI_ERROR", "Error al generar el historial.", 502)
 
-    historial_dict = historial_clinico.model_dump(mode="json")
-    historial_dict = _enrich_with_patient_history(
-        db, paciente, historial_dict, prior_historiales
+    historial_dict = enrich_historial_for_patient(
+        db, paciente_id, historial_clinico.model_dump(mode="json")
     )
 
     audio_path = "text-only"

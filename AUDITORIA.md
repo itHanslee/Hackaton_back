@@ -14,7 +14,7 @@
 
 ```
 routers/     → Presentación (HTTP/WS, validación entrada)
-services/    → Lógica de negocio e integraciones (IA, email, PDF)
+services/    → Lógica de negocio e integraciones (IA, email, PDF, clinical_enrichment)
 models/      → Dominio (db_models, schemas)
 db/          → Infraestructura persistencia
 core/        → Config, auth, utilidades transversales
@@ -34,6 +34,7 @@ uvicorn app.main:app --reload --port 8000
 - [x] Agente conversacional integrado (no microservicio)
 - [x] Transcribe REST + WS en un router
 - [x] 34 tests passing
+- [x] DRY: enriquecimiento clínico centralizado en `app/services/clinical_enrichment.py` (SRP)
 - [ ] Refactor futuro: extraer repositorios si crece complejidad (Repository pattern del agente POO)
 
 ## Métricas objetivo (agente auditoría)

@@ -14,11 +14,8 @@ from app.core.config import Settings, get_settings
 from app.db.database import SessionLocal
 from app.models.db_models import Cita, EPS, Medico, Paciente
 from app.services.ai import AIService
-from app.services.clinical_context import (
-    apply_prior_clinical_safety,
-    load_patient_clinical_context,
-)
-from app.services.medicamentos import MedicamentosService
+from app.services.clinical_context import load_patient_clinical_context
+from app.services.clinical_enrichment import enrich_historial_for_patient
 
 logger = logging.getLogger(__name__)
 
@@ -402,22 +399,16 @@ async def _generar_historial_tool(
         payload.get("paciente_id") or payload.get("patient_id")
     )
     context = None
-    prior_rows = []
-    paciente = None
     if paciente_id:
-        context, prior_rows = load_patient_clinical_context(db, paciente_id)
-        paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
+        context, _ = load_patient_clinical_context(db, paciente_id)
 
     try:
         result = await _ai.process_chat(text, generate_historial=True, context=context)
         historial = (
             result.historial.model_dump(mode="json") if result.historial else _mock_historial(text)
         )
-        if paciente and prior_rows:
-            allergy_terms = apply_prior_clinical_safety(historial, prior_rows)
-            historial = MedicamentosService().enrich_historial(
-                db, paciente.eps_id, historial, allergy_terms=allergy_terms
-            )
+        if paciente_id:
+            historial = enrich_historial_for_patient(db, paciente_id, historial)
         return {"success": True, "historial": historial}
     except Exception as exc:
         logger.warning("generar_historial failed: %s", exc)

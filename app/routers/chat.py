@@ -3,16 +3,11 @@ from sqlalchemy.orm import Session
 
 from app.core.responses import error_response, ok
 from app.db.database import get_db
-from app.models.db_models import Paciente
 from app.models.schemas import ChatRequest, ChatResponseData, HistorialClinico
 from app.services.ai import AIService, ServiceError
-from app.services.clinical_context import (
-    apply_prior_clinical_safety,
-    load_patient_clinical_context,
-    merge_context,
-)
+from app.services.clinical_context import load_patient_clinical_context, merge_context
+from app.services.clinical_enrichment import enrich_historial_for_patient
 from app.services.intents import intent_reply_message
-from app.services.medicamentos import MedicamentosService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 _ai = AIService()
@@ -20,9 +15,9 @@ _ai = AIService()
 
 def _resolve_context(db: Session, paciente_id: int | None, explicit: dict | None):
     if not paciente_id:
-        return explicit, [], None
-    prior_ctx, prior_rows = load_patient_clinical_context(db, paciente_id)
-    return merge_context(explicit, prior_ctx), prior_rows, paciente_id
+        return explicit, None
+    prior_ctx, _ = load_patient_clinical_context(db, paciente_id)
+    return merge_context(explicit, prior_ctx), paciente_id
 
 
 @router.post("")
@@ -45,7 +40,7 @@ async def chat(body: ChatRequest, db: Session = Depends(get_db)):
         except Exception:
             return error_response("TRANSCRIBE_FAILED", "No se pudo transcribir el audio.", 502)
 
-    context, prior_rows, paciente_id = _resolve_context(db, body.paciente_id, None)
+    context, paciente_id = _resolve_context(db, body.paciente_id, None)
 
     try:
         result = await _ai.process_chat(
@@ -65,15 +60,11 @@ async def chat(body: ChatRequest, db: Session = Depends(get_db)):
         return error_response("CHAT_FAILED", "Error al procesar el mensaje.", 502)
 
     historial = result.historial
-    if historial and paciente_id and prior_rows:
-        paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
-        if paciente:
-            historial_dict = historial.model_dump(mode="json")
-            allergy_terms = apply_prior_clinical_safety(historial_dict, prior_rows)
-            historial_dict = MedicamentosService().enrich_historial(
-                db, paciente.eps_id, historial_dict, allergy_terms=allergy_terms
-            )
-            historial = HistorialClinico.model_validate(historial_dict)
+    if historial and paciente_id:
+        historial_dict = enrich_historial_for_patient(
+            db, paciente_id, historial.model_dump(mode="json")
+        )
+        historial = HistorialClinico.model_validate(historial_dict)
 
     message = result.message or intent_reply_message(result.intent)
 
