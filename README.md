@@ -2,8 +2,6 @@
 
 FastAPI backend para hackathon MediNote: IA clínica (Gemini), agente conversacional (Azure OpenAI + Groq STT), auth JWT, citas, historiales con PDF/firma y correo SMTP.
 
-**Un solo servicio en el puerto 8000.** No hay microservicios separados.
-
 ## Arquitectura
 
 ```

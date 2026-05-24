@@ -7,7 +7,7 @@
 | Antes | Después |
 |-------|---------|
 | `app/` + `backend/` + `_backup_extract/` | Solo `app/` |
-| `chatbot_agent/` microservicio | `app/routers/agent.py` + `app/services/chat_agent.py` |
+| `chatbot_agent/` paquete externo | `app/routers/agent.py` + `app/services/chat_agent.py` |
 | `/transcribe` en router agent | `app/routers/transcribe.py` (toda STT junta) |
 
 ## Capas (FastAPI)
@@ -31,7 +31,7 @@ uvicorn app.main:app --reload --port 8000
 - [x] Un solo backend ejecutable (`app/main.py`)
 - [x] Carpeta `backend/` eliminada o gitignored (legacy)
 - [x] Backup `_backup_extract/` eliminado
-- [x] Agente conversacional integrado (no microservicio)
+- [x] Agente conversacional integrado en el backend principal
 - [x] Transcribe REST + WS en un router
 - [x] 34 tests passing
 - [x] DRY: enriquecimiento clínico centralizado en `app/services/clinical_enrichment.py` (SRP)
