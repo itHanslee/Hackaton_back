@@ -205,15 +205,30 @@ def _list_medicos(db: Session) -> list[dict[str, Any]]:
     return data
 
 
-def _list_slots(medico_id: int, date: str | None = None) -> list[dict[str, Any]]:
+def _list_slots(db: Session, medico_id: int, date: str | None = None) -> list[dict[str, Any]]:
     base_date = datetime.utcnow()
     if date:
         try:
             base_date = datetime.strptime(date, "%Y-%m-%d")
         except ValueError:
             pass
+    day_start = base_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+    booked = (
+        db.query(Cita)
+        .filter(
+            Cita.medico_id == medico_id,
+            Cita.fecha_hora >= day_start,
+            Cita.fecha_hora < day_end,
+            Cita.estado.in_(["programada", "activa", "pendiente", "confirmada"]),
+        )
+        .all()
+    )
+    booked_hours = {c.fecha_hora.hour for c in booked if c.fecha_hora}
     slots = []
     for index, hour in enumerate(range(9, 17)):
+        if hour in booked_hours:
+            continue
         start_time = base_date.replace(hour=hour, minute=0, second=0, microsecond=0)
         slots.append({"id": medico_id * 100 + index + 1, "datetime": start_time.isoformat()})
     return slots
@@ -278,6 +293,7 @@ async def _crear_paciente_tool(db: Session, text: str, payload: dict[str, Any]) 
 
 async def _buscar_medico_tool(db: Session, text: str, payload: dict[str, Any]) -> dict[str, Any]:
     especialidad = str(payload.get("especialidad") or "").lower()
+    target_date = str(payload.get("fecha") or payload.get("date") or "").strip() or None
     medicos = _list_medicos(db)
     filtered = [
         m for m in medicos
@@ -288,7 +304,7 @@ async def _buscar_medico_tool(db: Session, text: str, payload: dict[str, Any]) -
     if not filtered:
         return {"success": False, "error": "No hay medicos disponibles"}
     medico_id = int(filtered[0]["id"])
-    raw_slots = _list_slots(medico_id)
+    raw_slots = _list_slots(db, medico_id, target_date)
     slots = [
         {
             "id": str(s.get("id")),
@@ -298,7 +314,14 @@ async def _buscar_medico_tool(db: Session, text: str, payload: dict[str, Any]) -
         }
         for s in raw_slots
     ]
-    return {"success": True, "medicos": filtered, "slots": slots, "especialidad": especialidad or None}
+    return {
+        "success": True,
+        "medicos": filtered,
+        "slots": slots,
+        "especialidad": especialidad or None,
+        "fecha_consultada": target_date or datetime.utcnow().strftime("%Y-%m-%d"),
+        "fuente_disponibilidad": "database",
+    }
 
 
 async def _monitor_paciente_tool(db: Session, text: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -356,7 +379,27 @@ async def _crear_cita_tool(db: Session, text: str, payload: dict[str, Any]) -> d
     paciente_id = normalize_paciente_id(payload.get("paciente_id") or paciente_in.get("id"))
 
     if not paciente_id:
-        return {"success": False, "error": "paciente_id requerido"}
+        documento = _pick_value(payload, paciente_in, "documento", "cedula", "identificacion")
+        if documento:
+            existing = db.query(Paciente).filter(Paciente.cedula == documento).first()
+            if existing:
+                paciente_id = existing.id
+            else:
+                nombre = _pick_value(payload, paciente_in, "nombre", "name")
+                if nombre:
+                    new_p = Paciente(
+                        cedula=documento,
+                        nombre=nombre,
+                        telefono=_pick_value(payload, paciente_in, "telefono", "phone"),
+                        eps_id=_eps_id(db, _pick_value(payload, paciente_in, "eps")),
+                    )
+                    db.add(new_p)
+                    db.commit()
+                    db.refresh(new_p)
+                    paciente_id = new_p.id
+
+    if not paciente_id:
+        return {"success": False, "error": "paciente_id requerido (o documento+nombre para crear/ubicar paciente)"}
 
     paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
     medico = db.query(Medico).filter(Medico.id == medico_id).first()
@@ -558,3 +601,110 @@ def generate_reply(
     except Exception as exc:
         logger.warning("Azure OpenAI error: %s", exc)
         return fallback_reply(intent, tool_result, tool_name, user_text)
+
+
+TOOL_SELECTION_PROMPT = (
+    "Eres un selector de herramientas para un agente administrativo de salud. "
+    "Debes responder SOLO JSON valido con la forma {\"tool\":\"...\"}. "
+    "Tools validas: crear_paciente, monitor_paciente, generar_historial, buscar_medico, crear_cita, consulta_medica. "
+    "Regla clave: si el usuario confirma agendar (por ejemplo: si, dale, registrala, agendala, ejecutar tool) y "
+    "ya existe contexto previo de disponibilidad en el historial, selecciona crear_cita. "
+    "Si solo pide ver disponibilidad, selecciona buscar_medico. "
+    "No expliques nada fuera del JSON."
+)
+
+
+def choose_tool_with_ai(
+    text: str,
+    intent: str,
+    history: list[dict[str, str]] | None = None,
+    settings: Settings | None = None,
+) -> str:
+    default_tool = INTENT_TO_TOOL.get(intent, "consulta_medica")
+    settings = settings or get_settings()
+    client = _azure_client(settings)
+    if client is None:
+        return default_tool
+    try:
+        history_snippet = "[]"
+        if history:
+            history_snippet = json.dumps(history[-12:], ensure_ascii=False)
+        completion = client.chat.completions.create(
+            model=settings.azure_openai_deployment,
+            max_completion_tokens=120,
+            messages=[
+                {"role": "system", "content": TOOL_SELECTION_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Intent detectado: {intent}\n"
+                        f"Mensaje usuario: {text}\n"
+                        f"Historial reciente: {history_snippet}\n"
+                        f"Tool por defecto: {default_tool}\n"
+                        "Devuelve JSON con la tool elegida."
+                    ),
+                },
+            ],
+            response_format={"type": "json_object"},
+        )
+        raw = (completion.choices[0].message.content or "").strip()
+        parsed = json.loads(raw) if raw else {}
+        selected = str(parsed.get("tool") or "").strip()
+        if selected in TOOLS:
+            return selected
+    except Exception as exc:
+        logger.warning("Tool selection AI fallback: %s", exc)
+    return default_tool
+
+
+def stream_reply(
+    intent: str,
+    user_text: str,
+    tool_name: str,
+    tool_result: dict[str, Any],
+    conversation_history: list[dict[str, str]] | None = None,
+    settings: Settings | None = None,
+):
+    """Generador sincrono -- hace yield de cada token en tiempo real (stream=True)."""
+    settings = settings or get_settings()
+    client = _azure_client(settings)
+    if client is None:
+        yield fallback_reply(intent, tool_result, tool_name, user_text)
+        return
+    try:
+        history_snippet = "[]"
+        if conversation_history:
+            try:
+                history_snippet = json.dumps(conversation_history[-12:], ensure_ascii=False)
+            except Exception:
+                history_snippet = "[]"
+        stream = client.chat.completions.create(
+            model=settings.azure_openai_deployment,
+            max_completion_tokens=1200,
+            stream=True,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Historial reciente: {history_snippet}\n"
+                        f"Usuario: {user_text}\n"
+                        f"Intent: {intent}\n"
+                        f"Tool: {tool_name}\n"
+                        f"Resultado tool: {json.dumps(tool_result, ensure_ascii=False)}\n"
+                        "Genera la respuesta final para el usuario."
+                    ),
+                },
+            ],
+        )
+        has_content = False
+        for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta and delta.content:
+                has_content = True
+                yield delta.content
+        if not has_content:
+            yield fallback_reply(intent, tool_result, tool_name, user_text)
+    except Exception as exc:
+        logger.warning("Azure OpenAI stream error: %s", exc)
+        yield fallback_reply(intent, tool_result, tool_name, user_text)
