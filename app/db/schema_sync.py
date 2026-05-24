@@ -25,6 +25,7 @@ _COLUMN_PATCHES: dict[str, list[tuple[str, str, str]]] = {
         ("medicamentos_sugeridos", "JSONB", "JSON"),
         ("confirmado_por_medico", "BOOLEAN DEFAULT FALSE", "BOOLEAN DEFAULT 0"),
         ("pdf_path", "VARCHAR", "TEXT"),
+        ("incapacidad_pdf_path", "VARCHAR", "TEXT"),
         ("created_at", "TIMESTAMP", "DATETIME"),
     ],
     "citas": [

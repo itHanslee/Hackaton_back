@@ -32,6 +32,7 @@ _MEDICO_PREFIXES = [
     "/chat",
     "/consultas",
     "/historiales",
+    "/radicado",
     "/medicamentos",
     "/ws/transcribe",
     "/medicos/me",

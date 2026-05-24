@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     max_signature_mb: int = Field(default=1, alias="MAX_SIGNATURE_MB")
     seed_on_startup: bool = Field(default=True, alias="SEED_ON_STARTUP")
 
+    radicado_service_url: str = Field(
+        default="http://20.121.178.90:5437",
+        alias="RADICADO_SERVICE_URL",
+    )
+    radicado_timeout_sec: float = Field(default=180.0, alias="RADICADO_TIMEOUT_SEC")
+    radicado_service_token: str = Field(default="", alias="RADICADO_SERVICE_TOKEN")
+
     @model_validator(mode="after")
     def _default_smtp_from(self) -> "Settings":
         if not self.smtp_from.strip() and self.smtp_user.strip():

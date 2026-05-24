@@ -102,6 +102,10 @@ def historial_to_frontend(
 
 
 def apply_frontend_historial(historial: Historial, body: dict) -> None:
+    if "motivo_consulta" in body:
+        historial.motivo_consulta = body.get("motivo_consulta") or ""
+    if "plan_tratamiento" in body:
+        historial.plan_tratamiento = body.get("plan_tratamiento") or ""
     if "motivo" in body:
         historial.motivo_consulta = body.get("motivo") or ""
     if "diagnostico" in body:
@@ -118,6 +122,10 @@ def apply_frontend_historial(historial: Historial, body: dict) -> None:
         extra["notas_adicionales"] = body.get("notas_adicionales") or ""
     if "incapacidad_dias" in body:
         extra["incapacidad_dias"] = body.get("incapacidad_dias")
+        if body.get("incapacidad_dias"):
+            extra["requiere_incapacidad"] = True
+    if "requiere_incapacidad" in body:
+        extra["requiere_incapacidad"] = bool(body.get("requiere_incapacidad"))
     if "incapacidad_recomendaciones" in body:
         extra["incapacidad_recomendaciones"] = body.get("incapacidad_recomendaciones")
     if "medicamentos" in body:

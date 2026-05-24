@@ -25,6 +25,7 @@ from app.routers import (
     medicamentos,
     medicos,
     pacientes,
+    radicado,
     transcribe,
 )
 from app.services import groq_stt
@@ -108,6 +109,7 @@ app.include_router(eps.router)
 app.include_router(pacientes.router)
 app.include_router(medicamentos.router)
 app.include_router(consultas.router)
+app.include_router(radicado.router)
 
 _frontend_dir = Path(__file__).resolve().parents[1] / "frontend"
 if settings.debug and _frontend_dir.is_dir():
@@ -121,6 +123,16 @@ if settings.debug and _frontend_dir.is_dir():
 
 @app.get("/health")
 async def health():
+    from app.services.radicado_client import RadicadoServiceError, health_check
+
+    radicado_status = {"reachable": False}
+    try:
+        radicado_status = {"reachable": True, **health_check()}
+    except RadicadoServiceError as exc:
+        radicado_status = {"reachable": False, "error": str(exc)}
+    except Exception as exc:
+        radicado_status = {"reachable": False, "error": str(exc)}
+
     return ok({
         "status": "ok",
         "gemini_configured": bool(settings.google_api_key),
@@ -129,4 +141,5 @@ async def health():
             "groq_configured": bool(settings.groq_api_key),
         },
         "auth_disabled": settings.auth_disabled,
+        "radicado": radicado_status,
     })

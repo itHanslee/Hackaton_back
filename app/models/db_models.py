@@ -1,9 +1,14 @@
 from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
+
+
+def _uuid_str() -> str:
+    return str(uuid4())
 
 
 class EPS(Base):
@@ -80,8 +85,32 @@ class Historial(Base):
     medicamentos_sugeridos = Column(JSON)
     confirmado_por_medico = Column(Boolean, default=False)
     pdf_path = Column(String)
+    incapacidad_pdf_path = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     consulta = relationship("Consulta", back_populates="historial")
+    radicacion_jobs = relationship("IncapacidadRadicacionJob", back_populates="historial")
+
+
+class IncapacidadRadicacionJob(Base):
+    __tablename__ = "incapacidad_radicacion_jobs"
+
+    id = Column(String(36), primary_key=True, default=_uuid_str)
+    historial_id = Column(Integer, ForeignKey("historiales.id"), index=True, nullable=False)
+    medico_id = Column(Integer, ForeignKey("medicos.id"), nullable=True)
+    estado = Column(String(32), default="pendiente", index=True)
+    paso_actual = Column(Integer, default=0)
+    pdf_path = Column(String, nullable=True)
+    ocr_json = Column(JSON, nullable=True)
+    rethus_json = Column(JSON, nullable=True)
+    adres_json = Column(JSON, nullable=True)
+    reporte_json = Column(JSON, nullable=True)
+    score = Column(Integer, nullable=True)
+    recomendacion = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    historial = relationship("Historial", back_populates="radicacion_jobs")
 
 
 class MedicamentoEPS(Base):
