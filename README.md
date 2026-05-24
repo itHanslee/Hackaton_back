@@ -108,19 +108,25 @@ Login: `POST /auth/medico/login` o `POST /auth/paciente/login`
 | POST | `/medicos/me/firma` | Subir firma médico |
 | POST | `/eps/{id}/logo` | Subir logo EPS |
 
-## Estructura del proyecto
+## Estructura del proyecto (un solo backend)
 
 ```
-app/
-├── main.py              # Entry point FastAPI
-├── core/                # config, auth, security, middleware
-├── db/                  # database, schema_sync, seed
-├── models/              # SQLAlchemy + Pydantic schemas
-├── routers/             # HTTP + WebSocket endpoints
-└── services/            # IA, agente, PDF, email, slots
-tests/                   # pytest
-fixtures/                # datos de prueba
+HACKATON2026_BACK/
+├── app/                    # ← ÚNICO backend FastAPI (uvicorn app.main:app)
+│   ├── main.py
+│   ├── core/               # config, auth, security, middleware
+│   ├── db/                 # database, schema_sync, seed
+│   ├── models/             # SQLAlchemy + Pydantic
+│   ├── routers/            # HTTP + WebSocket
+│   └── services/           # IA, agente, PDF, email
+├── tests/
+├── fixtures/
+├── requirements.txt
+├── .env.example
+└── README.md
 ```
+
+**No uses la carpeta `backend/`** — era una copia legacy duplicada. Todo vive en `app/`.
 
 ## Tests
 
@@ -133,5 +139,5 @@ Los tests usan `MOCK_AI=true`, `AUTH_DISABLED=true` y SQLite de prueba.
 ## Notas
 
 - El agente (`/ws/chat`) escribe directamente en BD; no requiere segundo servicio.
-- Carpeta `backend/` en el repo es legacy local (gitignored en su `.env`); **canónico es `app/` en la raíz**.
+- Carpeta `backend/` en el repo es legacy — **no usar**; canónico es `app/` en la raíz.
 - Frontend demo local en `frontend/` (gitignored).

@@ -1,27 +1,17 @@
-"""Agente conversacional: WebSocket /ws/chat y transcripcion Groq REST."""
+"""Agente conversacional: WebSocket /ws/chat."""
 
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import uuid
 
-from fastapi import APIRouter, File, Form, UploadFile, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.core.responses import ok
-from app.services import chat_agent, groq_stt
+from app.services import chat_agent
 
 router = APIRouter(tags=["agent"])
 logger = logging.getLogger(__name__)
-
-
-class TranscribeJSONRequest(BaseModel):
-    audio: str
-    mime_type: str = "audio/webm"
-    language: str | None = "es"
-    prompt: str | None = None
 
 
 @router.websocket("/ws/chat")
@@ -84,31 +74,3 @@ async def ws_chat(websocket: WebSocket):
             await websocket.send_json({"type": "error", "message": str(exc)})
         except Exception:
             pass
-
-
-@router.post("/transcribe")
-async def transcribe_multipart(
-    file: UploadFile | None = File(default=None),
-    language: str | None = Form(default="es"),
-    prompt: str | None = Form(default=None),
-):
-    if file is None:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail="Adjunta 'file' (multipart) o usa /transcribe/json")
-    audio_bytes = await file.read()
-    mime = file.content_type or "audio/webm"
-    result = await groq_stt.transcribe(audio_bytes, mime, language=language, prompt=prompt)
-    return ok(result)
-
-
-@router.post("/transcribe/json")
-async def transcribe_json(req: TranscribeJSONRequest):
-    from fastapi import HTTPException
-    try:
-        audio_bytes = base64.b64decode(req.audio, validate=False)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Base64 invalido") from exc
-    result = await groq_stt.transcribe(
-        audio_bytes, req.mime_type, language=req.language, prompt=req.prompt
-    )
-    return ok(result)

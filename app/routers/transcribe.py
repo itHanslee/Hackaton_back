@@ -1,17 +1,27 @@
 import asyncio
+import base64
 import logging
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from app.core.audio import ALLOWED_MIME_TYPES, AudioValidationError
 from app.core.config import get_settings
-from app.core.responses import safe_client_message
+from app.core.responses import ok, safe_client_message
+from app.services import groq_stt
 from app.services.transcription import TranscriptionManager
 
 router = APIRouter(tags=["transcribe"])
 logger = logging.getLogger(__name__)
 _settings = get_settings()
 _transcription = TranscriptionManager()
+
+
+class TranscribeJSONRequest(BaseModel):
+    audio: str
+    mime_type: str = "audio/webm"
+    language: str | None = "es"
+    prompt: str | None = None
 
 
 @router.websocket("/ws/transcribe")
@@ -143,3 +153,31 @@ async def ws_transcribe(websocket: WebSocket):
         except Exception:
             pass
         await websocket.close()
+
+
+@router.post("/transcribe")
+async def transcribe_multipart(
+    file: UploadFile | None = File(default=None),
+    language: str | None = Form(default="es"),
+    prompt: str | None = Form(default=None),
+):
+    """STT Groq — multipart (baja latencia)."""
+    if file is None:
+        raise HTTPException(status_code=400, detail="Adjunta 'file' (multipart) o usa /transcribe/json")
+    audio_bytes = await file.read()
+    mime = file.content_type or "audio/webm"
+    result = await groq_stt.transcribe(audio_bytes, mime, language=language, prompt=prompt)
+    return ok(result)
+
+
+@router.post("/transcribe/json")
+async def transcribe_json(req: TranscribeJSONRequest):
+    """STT Groq — JSON + base64."""
+    try:
+        audio_bytes = base64.b64decode(req.audio, validate=False)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Base64 invalido") from exc
+    result = await groq_stt.transcribe(
+        audio_bytes, req.mime_type, language=req.language, prompt=req.prompt
+    )
+    return ok(result)
