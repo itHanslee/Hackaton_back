@@ -14,6 +14,18 @@ from app.services.clinical_context import (
 from app.services.medicamentos import MedicamentosService
 
 
+def build_eps_formulary_context(db: Session, eps_id: int) -> dict[str, str]:
+    summary = MedicamentosService().list_formulary_summary(db, eps_id)
+    return {
+        "formulario_eps": summary,
+        "instruccion_medicamentos": (
+            "Usa SOLO medicamentos del formulario EPS. "
+            "Los marcados DISPONIBLE van en medicamentos.disponibles_eps. "
+            "Los NO disponibles van en medicamentos.ideales_sugeridos con la razón de no cobertura."
+        ),
+    }
+
+
 def enrich_historial_for_patient(
     db: Session,
     paciente_id: int,

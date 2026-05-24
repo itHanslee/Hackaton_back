@@ -31,6 +31,9 @@ class HistorialClinico(BaseModel):
     alergias: str = NO_DEFINIDO
     notas_adicionales: str = NO_DEFINIDO
     medicamentos: MedicamentosHistorial = Field(default_factory=MedicamentosHistorial)
+    requiere_incapacidad: bool = False
+    incapacidad_dias: int | None = None
+    incapacidad_recomendaciones: str | None = None
 
 
 class ChatRequest(BaseModel):

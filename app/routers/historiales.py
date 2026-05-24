@@ -18,7 +18,7 @@ from app.models.schemas import (
 )
 from app.services.ai import AIService
 from app.services.clinical_context import load_patient_clinical_context, merge_context
-from app.services.clinical_enrichment import enrich_historial_for_patient
+from app.services.clinical_enrichment import build_eps_formulary_context, enrich_historial_for_patient
 from app.services.email import send_historial_email
 from app.services.frontend_serializers import apply_frontend_historial, historial_to_frontend
 from app.services.pdf import PdfContext, generate_pdf
@@ -376,6 +376,8 @@ async def generate_historial(body: GenerateHistorialRequest, db: Session = Depen
         paciente = db.query(Paciente).filter(Paciente.id == body.paciente_id).first()
         if not paciente:
             return error_response("NOT_FOUND", "Paciente no encontrado.", 404)
+        if paciente.eps_id:
+            context = merge_context(context, build_eps_formulary_context(db, paciente.eps_id))
 
     try:
         historial = await _ai.generate_historial(body.transcript, context=context)

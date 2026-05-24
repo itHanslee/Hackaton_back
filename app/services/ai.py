@@ -32,7 +32,10 @@ HISTORIAL_JSON_SCHEMA = """
   "medicamentos": {
     "disponibles_eps": [{"nombre": "string", "dosis": "string", "frecuencia": "string"}],
     "ideales_sugeridos": [{"nombre": "string", "razon": "string"}]
-  }
+  },
+  "requiere_incapacidad": false,
+  "incapacidad_dias": null,
+  "incapacidad_recomendaciones": "string"
 }
 """
 
@@ -277,6 +280,10 @@ Reglas:
 - El campo "alergias" debe incluir TODAS las alergias conocidas (previas + mencionadas hoy).
 - NO incluyas en medicamentos.disponibles_eps ni ideales_sugeridos fármacos contraindicados
   por alergias conocidas del paciente.
+- Si el contexto incluye "formulario_eps", DEBES proponer medicamentos únicamente de esa lista.
+  Los DISPONIBLE en EPS van en disponibles_eps; los NO disponibles en ideales_sugeridos.
+- requiere_incapacidad: true solo si la consulta sugiere reposo o incapacidad laboral.
+- Si requiere_incapacidad es true, indica incapacidad_dias (1-30) y recomendaciones breves.
 - Para datos de esta consulta no mencionados y sin antecedente previo, usa el valor exacto "{NO_DEFINIDO}".
 - Responde SOLO con el JSON, sin markdown ni texto adicional.
 {ctx_block}
@@ -348,6 +355,10 @@ def _mock_historial_from_transcript(
 
     alergias = prior_alergias if prior_alergias else NO_DEFINIDO
 
+    requiere_incap = any(
+        w in lower for w in ("incapacidad", "reposo", "no puede trabajar", "baja laboral")
+    )
+
     return HistorialClinico(
         motivo_consulta=motivo,
         sintomas=sintomas,
@@ -356,6 +367,14 @@ def _mock_historial_from_transcript(
         alergias=alergias,
         notas_adicionales=NO_DEFINIDO,
         medicamentos=medicamentos,
+        requiere_incapacidad=requiere_incap,
+        incapacidad_dias=3 if requiere_incap else None,
+        incapacidad_recomendaciones=(
+            "Reposo absoluto en domicilio. Evitar esfuerzos físicos. "
+            "Control médico si persisten síntomas."
+            if requiere_incap
+            else None
+        ),
     )
 
 
@@ -439,6 +458,16 @@ def _normalize_historial_data(data: dict) -> dict:
         normalized["medicamentos"] = {
             "disponibles_eps": [],
             "ideales_sugeridos": [],
+        }
+
+    if "requiere_incapacidad" not in normalized:
+        normalized["requiere_incapacidad"] = False
+    elif isinstance(normalized["requiere_incapacidad"], str):
+        normalized["requiere_incapacidad"] = normalized["requiere_incapacidad"].strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
         }
 
     return normalized

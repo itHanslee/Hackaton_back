@@ -13,7 +13,7 @@ from app.db.database import get_db
 from app.models.db_models import Cita, Consulta, Historial, Paciente
 from app.services.ai import AIService, ServiceError
 from app.services.clinical_context import build_prior_context, fetch_prior_historiales
-from app.services.clinical_enrichment import enrich_historial_for_patient
+from app.services.clinical_enrichment import build_eps_formulary_context, enrich_historial_for_patient
 from app.services.frontend_serializers import cita_to_activa
 
 logger = logging.getLogger(__name__)
@@ -49,13 +49,30 @@ def _normalize_sintomas(sintomas: list[str] | str) -> str:
 
 
 def _persist_historial_from_dict(db: Session, consulta_id: int, historial_dict: dict) -> Historial:
+    meds_payload: dict = {}
+    raw_meds = historial_dict.get("medicamentos")
+    if isinstance(raw_meds, dict):
+        meds_payload.update(raw_meds)
+    if historial_dict.get("alergias"):
+        meds_payload["alergias"] = historial_dict.get("alergias")
+    if historial_dict.get("notas_adicionales"):
+        meds_payload["notas_adicionales"] = historial_dict.get("notas_adicionales")
+    if historial_dict.get("requiere_incapacidad") is not None:
+        meds_payload["requiere_incapacidad"] = historial_dict.get("requiere_incapacidad")
+    if historial_dict.get("incapacidad_dias") is not None:
+        meds_payload["incapacidad_dias"] = historial_dict.get("incapacidad_dias")
+    if historial_dict.get("incapacidad_recomendaciones"):
+        meds_payload["incapacidad_recomendaciones"] = historial_dict.get(
+            "incapacidad_recomendaciones"
+        )
+
     existing = db.query(Historial).filter(Historial.consulta_id == consulta_id).first()
     if existing:
         existing.motivo_consulta = historial_dict.get("motivo_consulta", "")
         existing.sintomas = _normalize_sintomas(historial_dict.get("sintomas", []))
         existing.diagnostico = historial_dict.get("diagnostico", "")
         existing.plan_tratamiento = historial_dict.get("plan_tratamiento", "")
-        existing.medicamentos_sugeridos = historial_dict.get("medicamentos", {})
+        existing.medicamentos_sugeridos = meds_payload
         db.commit()
         db.refresh(existing)
         return existing
@@ -66,7 +83,7 @@ def _persist_historial_from_dict(db: Session, consulta_id: int, historial_dict: 
         sintomas=_normalize_sintomas(historial_dict.get("sintomas", [])),
         diagnostico=historial_dict.get("diagnostico", ""),
         plan_tratamiento=historial_dict.get("plan_tratamiento", ""),
-        medicamentos_sugeridos=historial_dict.get("medicamentos", {}),
+        medicamentos_sugeridos=meds_payload,
         confirmado_por_medico=False,
     )
     db.add(historial)
@@ -130,6 +147,8 @@ async def procesar_consulta(
     if existing_consulta:
         prior_historiales = fetch_prior_historiales(db, paciente_id)
         context = build_prior_context(prior_historiales)
+        if paciente.eps_id:
+            context = {**context, **build_eps_formulary_context(db, paciente.eps_id)}
         try:
             historial_clinico = await _ai.generate_historial(
                 existing_consulta.transcripcion, context=context
@@ -195,6 +214,8 @@ async def procesar_consulta(
 
     prior_historiales = fetch_prior_historiales(db, paciente_id)
     context = build_prior_context(prior_historiales)
+    if paciente.eps_id:
+        context = {**context, **build_eps_formulary_context(db, paciente.eps_id)}
 
     try:
         historial_clinico = await _ai.generate_historial(transcripcion, context=context)

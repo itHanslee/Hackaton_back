@@ -98,6 +98,7 @@ def historial_to_frontend(
         "paciente_fecha_nacimiento": paciente.fecha_nacimiento if paciente else "",
         "incapacidad_dias": meds_payload.get("incapacidad_dias"),
         "incapacidad_recomendaciones": meds_payload.get("incapacidad_recomendaciones"),
+        "requiere_incapacidad": bool(meds_payload.get("requiere_incapacidad")),
     }
 
 
