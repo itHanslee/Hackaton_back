@@ -1,50 +1,6 @@
-# Database indexes and migrations
+# Database indexes
 
-MediNote manages schema with **Alembic** (default) and applies performance indexes after each upgrade via `ensure_indexes()` (`app/db/indexes.py`).
-
-## Alembic (default)
-
-Set in `.env`:
-
-```env
-USE_ALEMBIC=true
-DATABASE_URL=sqlite:///./medinote.db
-```
-
-On startup (`app/main.py`), when `USE_ALEMBIC=true`, the app runs `alembic upgrade head` through `app/db/migrate.py`, then creates indexes with `IF NOT EXISTS`.
-
-### CLI
-
-From the project root:
-
-```bash
-# Apply pending migrations
-alembic upgrade head
-
-# Create a new migration after model changes
-alembic revision --autogenerate -m "describe change"
-
-# Mark an existing DB as up-to-date (without running DDL)
-alembic stamp head
-```
-
-### Existing databases (schema_sync → Alembic)
-
-If the database already has MediNote tables but no `alembic_version` table, startup detects this and runs **`stamp head`** automatically so existing deployments are not broken.
-
-To force a fresh migration on an empty database, use `alembic upgrade head`.
-
-### Tests
-
-Pytest sets `USE_ALEMBIC=false` and uses `create_all` / `drop_all` for speed (`tests/conftest.py`).
-
-### Legacy mode
-
-```env
-USE_ALEMBIC=false
-```
-
-Falls back to `app/db/schema_sync.py` (`create_all` + column patches).
+MediNote applies performance indexes during startup via `sync_schema()` → `ensure_indexes()` (`app/db/indexes.py`). Indexes are created with `CREATE INDEX IF NOT EXISTS`, so the step is safe on SQLite and PostgreSQL and can run repeatedly.
 
 ## Indexes
 

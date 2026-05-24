@@ -24,7 +24,6 @@ class Settings(BaseSettings):
         default="sqlite:///./medinote.db",
         alias="DATABASE_URL",
     )
-    use_alembic: bool = Field(default=True, alias="USE_ALEMBIC")
 
     api_timeout_sec: float = Field(default=90.0, alias="API_TIMEOUT_SEC")
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
@@ -33,6 +32,7 @@ class Settings(BaseSettings):
 
     google_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
     gemini_model: str = Field(default="gemini-2.0-flash", alias="GEMINI_MODEL")
+    gemini_fallback_on_quota: bool = Field(default=True, alias="GEMINI_FALLBACK_ON_QUOTA")
 
     azure_api_key: str = Field(default="", alias="AZURE_API_KEY")
     azure_openai_endpoint: str = Field(
@@ -127,7 +127,7 @@ class Settings(BaseSettings):
             return ""
         return str(value).replace(" ", "")
 
-    @field_validator("auth_disabled", "smtp_enabled", "smtp_use_tls", "use_alembic", mode="before")
+    @field_validator("auth_disabled", "smtp_enabled", "smtp_use_tls", "gemini_fallback_on_quota", mode="before")
     @classmethod
     def parse_bool_flags(cls, value: object) -> bool:
         if isinstance(value, bool):

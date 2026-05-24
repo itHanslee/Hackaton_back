@@ -16,6 +16,7 @@ from app.models.schemas import (
     NO_DEFINIDO,
 )
 from app.services.gemini_llm import complete_with_gemini
+from app.services.gemini_retry import is_quota_exhausted_error
 from app.services.gemini_stt import transcribe_with_gemini
 from app.services.intents import classify_intent_rule_based, intent_reply_message, suggest_slot
 
@@ -209,7 +210,15 @@ Mensaje:
 
         self._ensure_api_keys()
         prompt = _historial_prompt(transcript, context)
-        raw = await self._llm_complete(prompt, json_mode=True)
+        try:
+            raw = await self._llm_complete(prompt, json_mode=True)
+        except ServiceError as exc:
+            if exc.code == "GEMINI_QUOTA_EXCEEDED" and self.settings.gemini_fallback_on_quota:
+                logger.warning(
+                    "Cuota Gemini agotada — generando historial heurístico de respaldo"
+                )
+                return _mock_historial_from_transcript(transcript, context)
+            raise
         try:
             return _parse_historial_json(raw)
         except ValueError:
@@ -219,7 +228,15 @@ Mensaje:
                 + "\n\nIMPORTANTE: Tu respuesta anterior no fue JSON válido. "
                 "Responde ÚNICAMENTE con un objeto JSON que cumpla el esquema, sin markdown."
             )
-            raw_retry = await self._llm_complete(retry_prompt, json_mode=True)
+            try:
+                raw_retry = await self._llm_complete(retry_prompt, json_mode=True)
+            except ServiceError as exc:
+                if exc.code == "GEMINI_QUOTA_EXCEEDED" and self.settings.gemini_fallback_on_quota:
+                    logger.warning(
+                        "Cuota Gemini agotada en reintento — historial heurístico de respaldo"
+                    )
+                    return _mock_historial_from_transcript(transcript, context)
+                raise
             return _parse_historial_json(raw_retry)
 
     async def chat_reply(self, text: str, intent: IntentType) -> str:
@@ -254,6 +271,13 @@ Mensaje:
             ) from exc
         except ValueError as exc:
             raise ServiceError("GEMINI_LLM_FAILED", str(exc)) from exc
+        except Exception as exc:
+            if is_quota_exhausted_error(exc):
+                raise ServiceError(
+                    "GEMINI_QUOTA_EXCEEDED",
+                    "Cuota diaria de Gemini agotada. Espere el reinicio del límite o active MOCK_AI=true.",
+                ) from exc
+            raise
 
 
 def _strip_json_fence(raw: str) -> str:

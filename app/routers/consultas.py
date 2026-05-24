@@ -226,7 +226,8 @@ async def procesar_consulta(
             502,
         )
     except ServiceError as exc:
-        return error_response(exc.code, exc.message, 502)
+        status = 429 if exc.code == "GEMINI_QUOTA_EXCEEDED" else 502
+        return error_response(exc.code, exc.message, status)
     except Exception:
         logger.exception("Historial generation failed")
         return error_response("AI_ERROR", "Error al generar el historial.", 502)

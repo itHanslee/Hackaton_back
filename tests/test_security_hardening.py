@@ -64,6 +64,23 @@ def test_ws_chat_rejects_without_token(monkeypatch):
     get_settings.cache_clear()
 
 
+def test_ws_chat_accepts_medico_token_in_query(monkeypatch):
+    monkeypatch.setenv("AUTH_DISABLED", "false")
+    get_settings.cache_clear()
+    token = create_access_token(
+        role="medico",
+        subject_id=1,
+        cedula="1011",
+        nombre="Dra. Test",
+    )
+    client = TestClient(app)
+    with client.websocket_connect(f"/ws/chat?token={token}") as ws:
+        ws.send_json({"text": "hola"})
+        msg = ws.receive_json()
+        assert msg["type"] in {"tool_start", "chunk", "done", "error"}
+    get_settings.cache_clear()
+
+
 def test_ws_transcribe_works_when_auth_disabled():
     client = TestClient(app)
     with client.websocket_connect("/ws/transcribe") as ws:

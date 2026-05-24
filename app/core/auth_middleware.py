@@ -30,6 +30,7 @@ _MEDICO_PREFIXES = [
     "/historiales",
     "/radicado",
     "/medicamentos",
+    "/ws/chat",
     "/ws/transcribe",
     "/medicos/me",
     "/eps/",

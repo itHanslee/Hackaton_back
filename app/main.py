@@ -12,7 +12,6 @@ from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RateLimitMiddleware
 from app.core.responses import ok
 from app.db.database import SessionLocal
-from app.db.migrate import upgrade_head
 from app.db.schema_sync import sync_schema
 from app.db.seed import seed_database
 from app.routers import (
@@ -39,10 +38,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await groq_stt.init_http_client()
-    if settings.use_alembic:
-        upgrade_head()
-    else:
-        sync_schema()
+    sync_schema()
     if settings.jwt_secret.strip() in {"", "change-me-in-production", "test-secret-key"} and not settings.debug:
         logger.warning(
             "JWT_SECRET usa valor por defecto — configure un secreto fuerte en producción."
