@@ -34,9 +34,13 @@ _COLUMN_PATCHES: dict[str, list[tuple[str, str, str]]] = {
     ],
     "pacientes": [
         ("genero", "VARCHAR", "TEXT"),
+        ("tipo_documento", "VARCHAR DEFAULT 'CC'", "TEXT DEFAULT 'CC'"),
+        ("tipo_paciente", "VARCHAR DEFAULT 'Contributivo'", "TEXT DEFAULT 'Contributivo'"),
         ("telefono", "VARCHAR", "TEXT"),
         ("email", "VARCHAR", "TEXT"),
         ("password_hash", "VARCHAR", "TEXT"),
+        ("datos_incapacidad_json", "JSONB", "JSON"),
+        ("radicaciones_json", "JSONB", "JSON"),
     ],
     "medicos": [
         ("eps_id", "INTEGER", "INTEGER"),

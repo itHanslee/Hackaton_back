@@ -29,10 +29,14 @@ class Paciente(Base):
     nombre = Column(String, index=True)
     fecha_nacimiento = Column(String)
     genero = Column(String)
+    tipo_documento = Column(String, default="CC")
+    tipo_paciente = Column(String, default="Contributivo")
     telefono = Column(String)
     email = Column(String, nullable=True, index=True)
     password_hash = Column(String, nullable=True)
     eps_id = Column(Integer, ForeignKey("eps.id"))
+    datos_incapacidad_json = Column(JSON, nullable=True)
+    radicaciones_json = Column(JSON, nullable=True)
     citas = relationship("Cita", back_populates="paciente")
 
 

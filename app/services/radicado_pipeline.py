@@ -20,6 +20,7 @@ from app.services.incapacidad_pdf import (
 )
 from app.services.radicado_client import RadicadoServiceError, ocr_pdf, validar_adres, validar_rethus
 from app.services.radicado_report import build_validation_report
+from app.services.paciente_incapacidad import append_radicacion_proof, sync_paciente_incapacidad_datos
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,8 @@ def ensure_incapacidad_pdf(db: Session, historial_id: int, dias_override: int | 
     bundle = load_historial_bundle(db, historial_id)
     if not bundle:
         raise ValueError("Historial no encontrado")
+    if bundle.paciente:
+        sync_paciente_incapacidad_datos(db, bundle.paciente, bundle.eps)
     pdf_path, data = generate_incapacidad_pdf(bundle, dias_override=dias_override)
     bundle.historial.incapacidad_pdf_path = pdf_path
     db.commit()
@@ -135,6 +138,8 @@ def run_pipeline(job_id: str) -> None:
             estado="completo",
             paso_actual=4,
         )
+        if bundle.paciente:
+            append_radicacion_proof(db, bundle.paciente.id, job, ocr_data=ocr_data)
     except Exception as exc:
         logger.exception("Pipeline radicado falló job=%s", job_id)
         job = db.query(IncapacidadRadicacionJob).filter(IncapacidadRadicacionJob.id == job_id).first()

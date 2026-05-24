@@ -3,6 +3,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.db_models import Cita, Consulta, EPS, Historial, Medico, Paciente
+from app.services.paciente_incapacidad import build_paciente_incapacidad_datos
 
 
 def _eps_name(eps: EPS | None) -> str:
@@ -219,8 +220,14 @@ def paciente_resumen(db: Session, paciente: Paciente, medico_id: int | None = No
         "id": str(paciente.id),
         "nombre": paciente.nombre,
         "documento": paciente.cedula,
+        "tipo_documento": paciente.tipo_documento or "CC",
+        "tipo_paciente": paciente.tipo_paciente or "Contributivo",
         "eps": _eps_name(paciente.eps),
         "telefono": paciente.telefono,
+        "genero": paciente.genero,
+        "fecha_nacimiento": paciente.fecha_nacimiento,
+        "datos_incapacidad": paciente.datos_incapacidad_json or build_paciente_incapacidad_datos(paciente, paciente.eps),
+        "radicaciones": paciente.radicaciones_json or [],
         "ultima_consulta": ultima,
         "total_consultas": len(historiales) or len(consultas),
     }

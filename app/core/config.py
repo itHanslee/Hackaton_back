@@ -92,6 +92,16 @@ class Settings(BaseSettings):
     radicado_timeout_sec: float = Field(default=180.0, alias="RADICADO_TIMEOUT_SEC")
     radicado_service_token: str = Field(default="", alias="RADICADO_SERVICE_TOKEN")
 
+    empresa_nit: str = Field(default="", alias="EMPRESA_NIT")
+    empresa_razon_social: str = Field(default="CLÍNICA SAN IGNACIO", alias="EMPRESA_RAZON_SOCIAL")
+    clinica_direccion: str = Field(
+        default="Calle 76#6b-36 Barranquilla - Atlántico",
+        alias="CLINICA_DIRECCION",
+    )
+    clinica_telefono: str = Field(default="(605) 3852438", alias="CLINICA_TELEFONO")
+    clinica_nit: str = Field(default="", alias="CLINICA_NIT")
+    clinica_reps: str = Field(default="0800100328", alias="CLINICA_REPS")
+
     @model_validator(mode="after")
     def _default_smtp_from(self) -> "Settings":
         if not self.smtp_from.strip() and self.smtp_user.strip():
