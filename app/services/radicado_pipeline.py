@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +19,7 @@ from app.services.incapacidad_pdf import (
 )
 from app.services.radicado_client import RadicadoServiceError, ocr_pdf, validar_adres, validar_rethus
 from app.services.radicado_report import build_validation_report
+from app.services.job_runner import submit_background
 from app.services.paciente_incapacidad import append_radicacion_proof, sync_paciente_incapacidad_datos
 
 logger = logging.getLogger(__name__)
@@ -181,6 +181,5 @@ def start_radicacion_job(db: Session, historial_id: int, medico_id: int) -> Inca
     db.commit()
     db.refresh(job)
 
-    thread = threading.Thread(target=run_pipeline, args=(job.id,), daemon=True)
-    thread.start()
+    submit_background(run_pipeline, job.id)
     return job

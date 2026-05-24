@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+os.environ.setdefault("USE_ALEMBIC", "false")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_medinote.db")
 os.environ.setdefault("MOCK_AI", "true")
 os.environ.setdefault("SEED_ON_STARTUP", "false")

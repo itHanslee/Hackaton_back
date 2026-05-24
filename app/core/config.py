@@ -24,6 +24,7 @@ class Settings(BaseSettings):
         default="sqlite:///./medinote.db",
         alias="DATABASE_URL",
     )
+    use_alembic: bool = Field(default=True, alias="USE_ALEMBIC")
 
     api_timeout_sec: float = Field(default=90.0, alias="API_TIMEOUT_SEC")
     rate_limit_per_minute: int = Field(default=60, alias="RATE_LIMIT_PER_MINUTE")
@@ -126,7 +127,7 @@ class Settings(BaseSettings):
             return ""
         return str(value).replace(" ", "")
 
-    @field_validator("auth_disabled", "smtp_enabled", "smtp_use_tls", mode="before")
+    @field_validator("auth_disabled", "smtp_enabled", "smtp_use_tls", "use_alembic", mode="before")
     @classmethod
     def parse_bool_flags(cls, value: object) -> bool:
         if isinstance(value, bool):
