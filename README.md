@@ -27,7 +27,7 @@ Cliente (frontend / WS)
    PostgreSQL / SQLite
 ```
 
-Ver `INTEGRATION.md` para contratos WebSocket y flujos del agente.
+Ver flujos del agente en la sección WebSocket más abajo.
 
 ## Requisitos
 
@@ -58,6 +58,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Docs: http://localhost:8000/docs · Health: http://localhost:8000/health
 
+Con `DEBUG=true`, frontend local: http://127.0.0.1:8000/dev-ui/
+
 ## Demo sin API keys
 
 En `.env`:
@@ -67,14 +69,42 @@ MOCK_AI=true
 AUTH_DISABLED=true
 ```
 
-## Credenciales demo (con seed)
+## Credenciales demo (seed)
 
-| Rol | Usuario | Contraseña |
-|-----|---------|------------|
-| Médico | `1001` | `medico123` |
-| Paciente | `2001` | `paciente123` |
+Requieren `SEED_ON_STARTUP=true` (default). El login usa **cédula + contraseña** (no el email).
 
-Login: `POST /auth/medico/login` o `POST /auth/paciente/login`
+### Médicos
+
+| Cédula | Contraseña | Nombre | Email | Especialidad | EPS |
+|--------|------------|--------|-------|--------------|-----|
+| `1001` | `medico123` | Dr. Ana García | ana.garcia@medinote.local | Medicina General | Sura |
+| `1002` | `medico123` | Dr. Luis Pérez | luis.perez@medinote.local | Cardiología | Sura |
+| `1003` | `medico123` | Dra. María López | maria.lopez@medinote.local | Endocrinología | Sanitas |
+
+### Pacientes
+
+| Cédula | Contraseña | Nombre | Email | EPS |
+|--------|------------|--------|-------|-----|
+| `2001` | `paciente123` | Carlos Rodríguez | carlos.rodriguez@example.com | Sura |
+| `2002` | `paciente123` | Laura Martínez | laura.martinez@example.com | Sanitas |
+
+### Login
+
+```http
+POST /auth/medico/login
+Content-Type: application/json
+
+{ "cedula": "1001", "password": "medico123" }
+```
+
+```http
+POST /auth/paciente/login
+Content-Type: application/json
+
+{ "cedula": "2001", "password": "paciente123" }
+```
+
+La respuesta incluye `access_token` (JWT) para el header `Authorization: Bearer <token>`.
 
 ## Variables de entorno principales
 
@@ -108,6 +138,8 @@ Login: `POST /auth/medico/login` o `POST /auth/paciente/login`
 | WS | `/ws/chat` | Agente conversacional con tools |
 | POST | `/transcribe` | STT Groq (multipart) |
 | GET/POST | `/pacientes`, `/citas`, `/medicos` | CRUD agendamiento |
+| GET | `/citas/calendario?medico_id=` | Calendario por médico |
+| GET | `/medicos/me/citas?month=YYYY-MM` | Citas del médico autenticado |
 | POST | `/medicos/me/firma` | Subir firma médico |
 | POST | `/eps/{id}/logo` | Subir logo EPS |
 
@@ -137,7 +169,7 @@ HACKATON2026_BACK/
 pytest tests/ -q
 ```
 
-34 tests — usan `MOCK_AI=true`, `AUTH_DISABLED=true` y SQLite de prueba.
+45 tests — usan `MOCK_AI=true`, `AUTH_DISABLED=true` y SQLite de prueba.
 
 ## Notas
 
