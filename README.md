@@ -69,39 +69,56 @@ MOCK_AI=true
 AUTH_DISABLED=true
 ```
 
-## Credenciales demo (seed)
+## Credenciales de login
 
-Requieren `SEED_ON_STARTUP=true` (default). El login usa **cédula + contraseña** (no el email).
+El login usa **cédula + contraseña** (no el email). En BD las contraseñas se guardan con **Argon2** (`$argon2id$...`); eso es normal: el backend compara tu texto plano contra ese hash en `POST /auth/*/login`.
 
-### Médicos
+### BD compartida Hackathon (PostgreSQL remoto)
 
-| Cédula | Contraseña | Nombre | Email | Especialidad | EPS |
-|--------|------------|--------|-------|--------------|-----|
-| `1001` | `medico123` | Dr. Ana García | ana.garcia@medinote.local | Medicina General | Sura |
-| `1002` | `medico123` | Dr. Luis Pérez | luis.perez@medinote.local | Cardiología | Sura |
-| `1003` | `medico123` | Dra. María López | maria.lopez@medinote.local | Endocrinología | Sanitas |
+Si tu `.env` apunta al PostgreSQL del equipo y **ya tiene datos**, usa las cédulas reales de esa BD (no las del seed local):
 
-### Pacientes
+| Rol | Cédula | Contraseña | Nombre |
+|-----|--------|------------|--------|
+| Médico | `999888777` | `medico123` | Dra. Ana García |
+| Paciente | `111000111` | `paciente123` | Carlos Rodríguez |
 
-| Cédula | Contraseña | Nombre | Email | EPS |
-|--------|------------|--------|-------|-----|
-| `2001` | `paciente123` | Carlos Rodríguez | carlos.rodriguez@example.com | Sura |
-| `2002` | `paciente123` | Laura Martínez | laura.martinez@example.com | Sanitas |
+> Verificado contra la BD remota del proyecto: `1001` / `2001` **no existen** ahí; las cédulas largas anteriores son las correctas para ese entorno.
 
-### Login
+### Seed local (SQLite o BD vacía)
+
+Con `SEED_ON_STARTUP=true`, si no existe EPS «Sura», se crean usuarios demo con cédulas cortas:
+
+**Médicos** (contraseña común: `medico123`)
+
+| Cédula | Nombre | Email | Especialidad | EPS |
+|--------|--------|-------|--------------|-----|
+| `1001` | Dr. Ana García | ana.garcia@medinote.local | Medicina General | Sura |
+| `1002` | Dr. Luis Pérez | luis.perez@medinote.local | Cardiología | Sura |
+| `1003` | Dra. María López | maria.lopez@medinote.local | Endocrinología | Sanitas |
+
+**Pacientes** (contraseña común: `paciente123`)
+
+| Cédula | Nombre | Email | EPS |
+|--------|--------|-------|-----|
+| `2001` | Carlos Rodríguez | carlos.rodriguez@example.com | Sura |
+| `2002` | Laura Martínez | laura.martinez@example.com | Sanitas |
+
+Si la BD ya tiene EPS «Sura» pero usuarios sin `password_hash`, el arranque solo rellena hash/email faltantes — **no cambia cédulas ni contraseñas ya guardadas**.
+
+### Ejemplo de login
 
 ```http
 POST /auth/medico/login
 Content-Type: application/json
 
-{ "cedula": "1001", "password": "medico123" }
+{ "cedula": "999888777", "password": "medico123" }
 ```
 
 ```http
 POST /auth/paciente/login
 Content-Type: application/json
 
-{ "cedula": "2001", "password": "paciente123" }
+{ "cedula": "111000111", "password": "paciente123" }
 ```
 
 La respuesta incluye `access_token` (JWT) para el header `Authorization: Bearer <token>`.
