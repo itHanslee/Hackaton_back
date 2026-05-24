@@ -1,16 +1,47 @@
-﻿# MediNote - Backend 1 (IA)
+﻿# MediNote AI — Backend unificado
 
-FastAPI para chat con intencion, transcripcion de audio con Grok STT (Azure AI endpoint dedicado) y generacion de historial clinico (LLM).
+FastAPI backend para hackathon MediNote: IA clínica (Gemini), agente conversacional (Azure OpenAI + Groq STT), auth JWT, citas, historiales con PDF/firma y correo SMTP.
+
+**Un solo servicio en el puerto 8000.** No hay microservicios separados.
+
+## Arquitectura
+
+```
+Cliente (frontend / WS)
+        │
+        ▼
+   app/main.py  (:8000)
+        │
+   ┌────┴────────────────────────────────────┐
+   │ Routers                                  │
+   │  auth, chat, historiales, transcribe     │
+   │  agent (/ws/chat), citas, pacientes      │
+   │  medicos, medicamentos, consultas, eps   │
+   └────┬────────────────────────────────────┘
+        │
+   ┌────┴────────────────────────────────────┐
+   │ Services                                 │
+   │  ai (Gemini STT/LLM)                     │
+   │  chat_agent (Azure tools → BD directa)   │
+   │  groq_stt, email, pdf, slots, medicamentos│
+   └────┬────────────────────────────────────┘
+        ▼
+   PostgreSQL / SQLite
+```
+
+Ver `INTEGRATION.md` para contratos WebSocket y flujos del agente.
 
 ## Requisitos
 
 - Python 3.11+
-- API keys si `MOCK_AI=false`
+- `GOOGLE_API_KEY` para chat/historial REST y transcripción WS (Gemini)
+- `AZURE_API_KEY` + `GROQ_API_KEY` opcionales para el agente conversacional
+- PostgreSQL en producción (`DATABASE_URL`)
 
-## Instalacion
+## Instalación
 
 ```powershell
-cd hackaton_backend
+cd HACKATON2026_BACK
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -23,48 +54,84 @@ copy .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Docs: `http://localhost:8000/docs`
+Docs: http://localhost:8000/docs
 
-## Variables de entorno
+## Demo sin API keys
 
-| Variable | Default | Descripcion |
-|----------|---------|-------------|
-| `MOCK_AI` | `true` | Demo sin API keys |
-| `API_TIMEOUT_SEC` | `30` | Timeout STT/LLM |
-| `RATE_LIMIT_PER_MINUTE` | `60` | Limite por IP |
-| `MAX_AUDIO_MB` | `10` | Tamano maximo audio REST/WS |
-| `MAX_WS_CHUNKS` | `500` | Fragmentos maximos por sesion WS |
-| `WS_TRANSCRIBE_ON_INTERVAL` | `false` | Si `true`, partials mock cada N seg |
-| `STT_PROVIDER` | `grok` | Proveedor de transcripcion |
-| `STT_MODEL` | `grok-4-20-non-reasoning` | Modelo STT |
-| `AZURE_AI_STT_ENDPOINT` | `https://scia.services.ai.azure.com/openai/v1/` | Endpoint STT (no GPT endpoint) |
-| `AZURE_API_KEY` | `""` | API key para Grok STT |
-| `LLM_PROVIDER` | `openai` | Proveedor LLM de chat/historial |
-| `LLM_MODEL` | `gpt-4o-mini` | Modelo LLM de chat/historial |
-| `OPENAI_API_KEY` | `""` | API key del LLM (si aplica) |
+En `.env`:
 
-## Modo demo (`MOCK_AI=true`)
+```
+MOCK_AI=true
+AUTH_DISABLED=true
+```
 
-Sin API keys: transcripcion simulada, intenciones por reglas e historial derivado del transcript.
+## Credenciales demo (con seed)
 
-## Endpoints
+| Rol | Usuario | Contraseña |
+|-----|---------|------------|
+| Médico | `1001` | `medico123` |
+| Paciente | `2001` | `paciente123` |
 
-| Metodo | Ruta | Descripcion |
+Login: `POST /auth/medico/login` o `POST /auth/paciente/login`
+
+## Variables de entorno principales
+
+| Variable | Descripción |
+|----------|-------------|
+| `DATABASE_URL` | SQLite local o PostgreSQL |
+| `MOCK_AI` | Demo sin llamadas a IA |
+| `GOOGLE_API_KEY` | Gemini STT + LLM (REST + WS transcribe) |
+| `GEMINI_MODEL` | Modelo Gemini |
+| `AZURE_API_KEY` | Agente conversacional Azure OpenAI |
+| `AZURE_OPENAI_DEPLOYMENT` | Deployment del agente |
+| `GROQ_API_KEY` | STT rápido (`POST /transcribe`) |
+| `JWT_SECRET` | Firma de tokens |
+| `AUTH_DISABLED` | Bypass auth (desarrollo) |
+| `SMTP_*` | Email al confirmar historial |
+| `SEED_ON_STARTUP` | Datos demo al arrancar |
+
+## Endpoints principales
+
+| Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/health` | Estado servicio |
-| POST | `/chat` | Texto o audio base64 -> intencion + mensaje |
-| POST | `/historiales` | Transcript -> JSON clinico + `historial_id` |
-| WS | `/ws/transcribe` | Transcripcion en vivo (Grok STT al `stop`) |
+| GET | `/health` | Estado + IA/agente |
+| POST | `/auth/medico/login` | Login médico |
+| POST | `/auth/paciente/login` | Login paciente |
+| POST | `/chat` | Intención + mensaje (Gemini) |
+| POST | `/historiales` | Generar historial clínico |
+| POST | `/historiales/{id}/confirm` | Confirmar + PDF + email |
+| GET | `/historiales/{id}/pdf` | Descargar PDF |
+| WS | `/ws/transcribe` | Transcripción en vivo (Gemini) |
+| WS | `/ws/chat` | Agente conversacional con tools |
+| POST | `/transcribe` | STT Groq (multipart) |
+| GET/POST | `/pacientes`, `/citas`, `/medicos` | CRUD agendamiento |
+| POST | `/medicos/me/firma` | Subir firma médico |
+| POST | `/eps/{id}/logo` | Subir logo EPS |
 
-## WebSocket `/ws/transcribe`
+## Estructura del proyecto
 
-1. `{"type":"start","session_id":"abc","mime_type":"audio/webm"}`
-2. `{"type":"audio","chunk":"<base64>"}` (repetir)
-3. `{"type":"stop"}` -> `{"type":"final","text":"transcripcion completa"}`
+```
+app/
+├── main.py              # Entry point FastAPI
+├── core/                # config, auth, security, middleware
+├── db/                  # database, schema_sync, seed
+├── models/              # SQLAlchemy + Pydantic schemas
+├── routers/             # HTTP + WebSocket endpoints
+└── services/            # IA, agente, PDF, email, slots
+tests/                   # pytest
+fixtures/                # datos de prueba
+```
 
-Importante: la transcripcion real con Grok STT ocurre al enviar `stop`, no por cada chunk.
+## Tests
 
-## Contratos
+```powershell
+pytest tests/ -q
+```
 
-- FE1 -> `POST /chat`, `WS /ws/transcribe`
-- BE2 + FE2 -> objeto `historial` + `historial_id` de `POST /historiales`
+Los tests usan `MOCK_AI=true`, `AUTH_DISABLED=true` y SQLite de prueba.
+
+## Notas
+
+- El agente (`/ws/chat`) escribe directamente en BD; no requiere segundo servicio.
+- Carpeta `backend/` en el repo es legacy local (gitignored en su `.env`); **canónico es `app/` en la raíz**.
+- Frontend demo local en `frontend/` (gitignored).

@@ -8,3 +8,22 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# Runtime / local data
+*.db
+pdfs/
+audio/
+logos/
+signatures/
+test_pdfs/
+test_audio/
+media/
+
+# Local dev / backups
+frontend/
+agency-agents/
+agency-agent/
+agent/
+agent-venv/
+_backup_extract/
+backend/
