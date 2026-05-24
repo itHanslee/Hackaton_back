@@ -122,3 +122,80 @@ async def test_e2e_consulta_and_historial(client):
 
     hist_list = await client.get("/pacientes/1/historial")
     assert len(hist_list.json()["data"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_prior_allergies_applied_on_new_consulta(client):
+    """Alergia registrada en visita anterior debe aparecer en consulta nueva."""
+    slot1 = (datetime.utcnow() + timedelta(days=4)).replace(
+        hour=9, minute=0, second=0, microsecond=0
+    )
+    cita1 = await client.post(
+        "/citas",
+        json={
+            "paciente_id": 1,
+            "medico_id": 1,
+            "fecha_hora": slot1.isoformat(),
+            "motivo": "Primera consulta cefalea",
+        },
+    )
+    cita1_id = cita1.json()["data"]["id"]
+
+    proc1 = await client.post(
+        "/consultas/procesar",
+        data={
+            "paciente_id": "1",
+            "cita_id": str(cita1_id),
+            "transcript": "Paciente con cefalea. Alergia a ibuprofeno confirmada en anamnesis.",
+        },
+    )
+    consulta1_id = proc1.json()["data"]["consulta_id"]
+    await client.post(
+        "/historiales",
+        json={
+            "consulta_id": consulta1_id,
+            "motivo_consulta": "Cefalea",
+            "sintomas": ["Cefalea"],
+            "diagnostico": "Cefalea tensional",
+            "plan_tratamiento": "Analgésicos alternativos",
+            "medicamentos": proc1.json()["data"]["historial"]["medicamentos"],
+            "alergias": "Ibuprofeno",
+            "confirmado_por_medico": True,
+        },
+    )
+
+    slot2 = (datetime.utcnow() + timedelta(days=5)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    )
+    cita2 = await client.post(
+        "/citas",
+        json={
+            "paciente_id": 1,
+            "medico_id": 1,
+            "fecha_hora": slot2.isoformat(),
+            "motivo": "Dolor estómago",
+        },
+    )
+    cita2_id = cita2.json()["data"]["id"]
+
+    proc2 = await client.post(
+        "/consultas/procesar",
+        data={
+            "paciente_id": "1",
+            "cita_id": str(cita2_id),
+            "transcript": "Paciente refiere dolor epigástrico desde ayer, sin fiebre.",
+        },
+    )
+    assert proc2.status_code == 200
+    hist = proc2.json()["data"]["historial"]
+    assert "ibuprofeno" in hist["alergias"].lower()
+
+    excluded = hist.get("medicamentos_excluidos_por_alergia") or []
+    med_names = [
+        m.get("nombre", "")
+        for m in hist["medicamentos"].get("disponibles_eps", [])
+        + hist["medicamentos"].get("ideales_sugeridos", [])
+    ]
+    assert all("ibuprofeno" not in n.lower() for n in med_names)
+    if excluded:
+        assert any("ibuprofeno" in x.lower() for x in excluded)

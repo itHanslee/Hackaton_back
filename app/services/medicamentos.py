@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.db_models import MedicamentoEPS
+from app.services.clinical_context import medication_conflicts_allergy
 
 
 class MedicamentosService:
@@ -56,11 +57,38 @@ class MedicamentosService:
             "ideales_sugeridos": ideales_sugeridos,
         }
 
+    def _filter_by_allergies(
+        self, meds: dict[str, list[dict]], allergy_terms: list[str]
+    ) -> tuple[dict[str, list[dict]], list[str]]:
+        if not allergy_terms:
+            return meds, []
+
+        excluded: list[str] = []
+
+        def _keep(med: dict) -> bool:
+            name = med.get("nombre") or med.get("nombre_generico") or med.get("nombre_comercial") or ""
+            if medication_conflicts_allergy(str(name), allergy_terms):
+                excluded.append(str(name))
+                return False
+            return True
+
+        filtered = {
+            "disponibles_eps": [m for m in meds.get("disponibles_eps", []) if _keep(m)],
+            "ideales_sugeridos": [m for m in meds.get("ideales_sugeridos", []) if _keep(m)],
+        }
+        return filtered, excluded
+
     def enrich_historial(
-        self, db: Session, eps_id: int, historial_dict: dict
+        self,
+        db: Session,
+        eps_id: int,
+        historial_dict: dict,
+        allergy_terms: list[str] | None = None,
     ) -> dict:
         diagnostico = historial_dict.get("diagnostico", "")
-        historial_dict["medicamentos"] = self.get_by_diagnostico(
-            db, eps_id, diagnostico
-        )
+        meds = self.get_by_diagnostico(db, eps_id, diagnostico)
+        filtered, excluded = self._filter_by_allergies(meds, allergy_terms or [])
+        historial_dict["medicamentos"] = filtered
+        if excluded:
+            historial_dict["medicamentos_excluidos_por_alergia"] = excluded
         return historial_dict

@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -271,8 +271,13 @@ genera un historial clínico en JSON válido con este esquema exacto:
 {HISTORIAL_JSON_SCHEMA}
 
 Reglas:
-- No inventes datos que no aparezcan en la transcripción.
-- Todo campo sin información debe tener el valor exacto "{NO_DEFINIDO}".
+- La transcripción es la fuente principal de la consulta actual (motivo, síntomas nuevos, hallazgos de hoy).
+- Si el contexto clínico previo incluye alergias, medicamentos o diagnósticos relevantes,
+  DEBES reflejarlos en el historial aunque el paciente no los repita en esta visita.
+- El campo "alergias" debe incluir TODAS las alergias conocidas (previas + mencionadas hoy).
+- NO incluyas en medicamentos.disponibles_eps ni ideales_sugeridos fármacos contraindicados
+  por alergias conocidas del paciente.
+- Para datos de esta consulta no mencionados y sin antecedente previo, usa el valor exacto "{NO_DEFINIDO}".
 - Responde SOLO con el JSON, sin markdown ni texto adicional.
 {ctx_block}
 Transcripción:
@@ -302,6 +307,8 @@ def _mock_historial_from_transcript(
         sintomas.append("Fatiga")
     if "náusea" in lower or "nausea" in lower:
         sintomas.append("Náuseas")
+    if any(w in lower for w in ("estómago", "estomago", "epigástr", "epigastr")):
+        sintomas.append("Dolor epigástrico")
     if "abdominal" in lower:
         sintomas.append("Dolor abdominal")
     if not sintomas:
@@ -314,15 +321,23 @@ def _mock_historial_from_transcript(
     )
 
     medicamentos = MedicamentosHistorial()
+    prior_alergias = ctx.get("alergias_conocidas", "")
+    allergy_terms = [a.strip().lower() for a in prior_alergias.split(",") if a.strip()]
+
+    def _safe_to_prescribe(name: str) -> bool:
+        lower = name.lower()
+        return not any(term in lower or lower in term for term in allergy_terms if len(term) >= 3)
+
     if any(w in lower for w in ("acetaminofén", "acetaminofen", "paracetamol")):
-        medicamentos.disponibles_eps.append(
-            MedicamentoDisponible(
-                nombre="Acetaminofén",
-                dosis="500 mg",
-                frecuencia="cada 8 horas",
+        if _safe_to_prescribe("Acetaminofén"):
+            medicamentos.disponibles_eps.append(
+                MedicamentoDisponible(
+                    nombre="Acetaminofén",
+                    dosis="500 mg",
+                    frecuencia="cada 8 horas",
+                )
             )
-        )
-    if "ibuprofeno" in lower:
+    if "ibuprofeno" in lower and _safe_to_prescribe("Ibuprofeno"):
         medicamentos.disponibles_eps.append(
             MedicamentoDisponible(
                 nombre="Ibuprofeno",
@@ -331,12 +346,14 @@ def _mock_historial_from_transcript(
             )
         )
 
+    alergias = prior_alergias if prior_alergias else NO_DEFINIDO
+
     return HistorialClinico(
         motivo_consulta=motivo,
         sintomas=sintomas,
         diagnostico=diagnostico,
         plan_tratamiento=plan,
-        alergias=NO_DEFINIDO,
+        alergias=alergias,
         notas_adicionales=NO_DEFINIDO,
         medicamentos=medicamentos,
     )
@@ -347,6 +364,8 @@ def _derive_motivo(transcript: str, lower: str) -> str:
         return "Cefalea"
     if "dolor de pecho" in lower or "dolor torácico" in lower:
         return "Dolor torácico"
+    if "estómago" in lower or "estomago" in lower or "epigástr" in lower or "epigastr" in lower:
+        return "Dolor abdominal"
     if "tos" in lower:
         return "Tos"
     if "fiebre" in lower:
@@ -362,6 +381,8 @@ def _derive_motivo(transcript: str, lower: str) -> str:
 def _derive_diagnostico(lower: str, motivo: str) -> str:
     if "gastritis" in lower:
         return "Gastritis"
+    if any(w in lower for w in ("estómago", "estomago", "epigástr", "epigastr")):
+        return "Gastritis — impresión clínica"
     if "cefalea" in lower or "dolor de cabeza" in lower:
         return "Cefalea tensional (R51) — impresión clínica"
     if "fiebre" in lower and "sin fiebre" not in lower:

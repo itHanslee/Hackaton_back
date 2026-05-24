@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_auth_claims
 from app.core.responses import error_response, ok
 from app.db.database import get_db
-from app.models.db_models import Cita, Consulta, Historial, Paciente
+from app.models.db_models import Cita, Historial, Paciente
 from app.models.schemas import CitaResponse, HistorialResponse
+from app.services.clinical_context import fetch_prior_historiales
 
 router = APIRouter(prefix="/pacientes", tags=["pacientes"])
 
@@ -38,14 +39,7 @@ def _serialize_cita(cita: Cita) -> dict:
 
 
 def _historiales_for_paciente(db: Session, paciente_id: int) -> list[Historial]:
-    return (
-        db.query(Historial)
-        .join(Consulta, Historial.consulta_id == Consulta.id)
-        .join(Cita, Consulta.cita_id == Cita.id)
-        .filter(Cita.paciente_id == paciente_id)
-        .order_by(Historial.created_at.desc())
-        .all()
-    )
+    return fetch_prior_historiales(db, paciente_id)
 
 
 @router.get("/me/historial")

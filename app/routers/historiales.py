@@ -10,9 +10,20 @@ from app.core.deps import get_auth_claims, require_medico
 from app.core.responses import error_response, ok
 from app.db.database import get_db
 from app.models.db_models import Cita, Consulta, EPS, Historial, Medico, Paciente
-from app.models.schemas import GenerateHistorialRequest, GenerateHistorialResponseData, HistorialConfirmRequest
+from app.models.schemas import (
+    GenerateHistorialRequest,
+    GenerateHistorialResponseData,
+    HistorialClinico,
+    HistorialConfirmRequest,
+)
 from app.services.ai import AIService
+from app.services.clinical_context import (
+    apply_prior_clinical_safety,
+    load_patient_clinical_context,
+    merge_context,
+)
 from app.services.email import send_historial_email
+from app.services.medicamentos import MedicamentosService
 from app.services.pdf import PdfContext, generate_pdf
 
 logger = logging.getLogger(__name__)
@@ -196,17 +207,21 @@ def get_historial_pdf(id: int, request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/generate")
-async def generate_historial(body: GenerateHistorialRequest):
+async def generate_historial(body: GenerateHistorialRequest, db: Session = Depends(get_db)):
     """Genera historial clínico estructurado desde la transcripción de la consulta."""
     historial_id = uuid4()
+    context = body.context
+    prior_rows: list[Historial] = []
+    paciente = None
+    if body.paciente_id:
+        prior_ctx, prior_rows = load_patient_clinical_context(db, body.paciente_id)
+        context = merge_context(body.context, prior_ctx)
+        paciente = db.query(Paciente).filter(Paciente.id == body.paciente_id).first()
+        if not paciente:
+            return error_response("NOT_FOUND", "Paciente no encontrado.", 404)
+
     try:
-        historial = await _ai.generate_historial(body.transcript, context=body.context)
-        payload = GenerateHistorialResponseData(
-            historial_id=historial_id,
-            historial=historial,
-            session_id=body.session_id,
-        )
-        return ok(payload.model_dump(mode="json"))
+        historial = await _ai.generate_historial(body.transcript, context=context)
     except ValueError:
         return error_response(
             "HISTORIAL_INVALID",
@@ -215,3 +230,18 @@ async def generate_historial(body: GenerateHistorialRequest):
         )
     except Exception:
         return error_response("AI_ERROR", "Error al procesar la solicitud.", 502)
+
+    if paciente and prior_rows:
+        historial_dict = historial.model_dump(mode="json")
+        allergy_terms = apply_prior_clinical_safety(historial_dict, prior_rows)
+        historial_dict = MedicamentosService().enrich_historial(
+            db, paciente.eps_id, historial_dict, allergy_terms=allergy_terms
+        )
+        historial = HistorialClinico.model_validate(historial_dict)
+
+    payload = GenerateHistorialResponseData(
+        historial_id=historial_id,
+        historial=historial,
+        session_id=body.session_id,
+    )
+    return ok(payload.model_dump(mode="json"))

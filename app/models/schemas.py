@@ -38,6 +38,7 @@ class ChatRequest(BaseModel):
     audio: str | None = None
     mime_type: str = "audio/webm"
     generate_historial: bool = False
+    paciente_id: int | None = None
 
     @model_validator(mode="after")
     def text_or_audio(self) -> "ChatRequest":
@@ -75,6 +76,7 @@ class GenerateHistorialRequest(BaseModel):
     session_id: str | None = None
     transcript: str = Field(..., min_length=1)
     context: dict[str, str] | None = None
+    paciente_id: int | None = None
 
 
 class GenerateHistorialResponseData(BaseModel):

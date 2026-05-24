@@ -1,16 +1,32 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.core.responses import error_response, ok
-from app.models.schemas import ChatRequest, ChatResponseData
+from app.db.database import get_db
+from app.models.db_models import Paciente
+from app.models.schemas import ChatRequest, ChatResponseData, HistorialClinico
 from app.services.ai import AIService, ServiceError
+from app.services.clinical_context import (
+    apply_prior_clinical_safety,
+    load_patient_clinical_context,
+    merge_context,
+)
 from app.services.intents import intent_reply_message
+from app.services.medicamentos import MedicamentosService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 _ai = AIService()
 
 
+def _resolve_context(db: Session, paciente_id: int | None, explicit: dict | None):
+    if not paciente_id:
+        return explicit, [], None
+    prior_ctx, prior_rows = load_patient_clinical_context(db, paciente_id)
+    return merge_context(explicit, prior_ctx), prior_rows, paciente_id
+
+
 @router.post("")
-async def chat(body: ChatRequest):
+async def chat(body: ChatRequest, db: Session = Depends(get_db)):
     """
     Recibe texto o audio (base64). Devuelve intención, slots de cita (fecha/hora/especialidad) y mensaje.
     Con generate_historial=true incluye el JSON clínico en la respuesta.
@@ -29,8 +45,14 @@ async def chat(body: ChatRequest):
         except Exception:
             return error_response("TRANSCRIBE_FAILED", "No se pudo transcribir el audio.", 502)
 
+    context, prior_rows, paciente_id = _resolve_context(db, body.paciente_id, None)
+
     try:
-        result = await _ai.process_chat(text, generate_historial=body.generate_historial)
+        result = await _ai.process_chat(
+            text,
+            generate_historial=body.generate_historial,
+            context=context or None,
+        )
     except ValueError:
         return error_response(
             "HISTORIAL_INVALID",
@@ -41,6 +63,17 @@ async def chat(body: ChatRequest):
         return error_response(exc.code, exc.message, 502)
     except Exception:
         return error_response("CHAT_FAILED", "Error al procesar el mensaje.", 502)
+
+    historial = result.historial
+    if historial and paciente_id and prior_rows:
+        paciente = db.query(Paciente).filter(Paciente.id == paciente_id).first()
+        if paciente:
+            historial_dict = historial.model_dump(mode="json")
+            allergy_terms = apply_prior_clinical_safety(historial_dict, prior_rows)
+            historial_dict = MedicamentosService().enrich_historial(
+                db, paciente.eps_id, historial_dict, allergy_terms=allergy_terms
+            )
+            historial = HistorialClinico.model_validate(historial_dict)
 
     message = result.message or intent_reply_message(result.intent)
 
@@ -56,6 +89,6 @@ async def chat(body: ChatRequest):
         slot_suggested=slot_suggested,
         appointment_slots=appointment_slots,
         transcript=transcript,
-        historial=result.historial,
+        historial=historial,
     )
     return ok(payload.model_dump(mode="json"))

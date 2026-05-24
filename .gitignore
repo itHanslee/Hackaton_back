@@ -21,9 +21,12 @@ media/
 
 # Local dev / backups
 frontend/
+prueba_microservicio/
+prueba_microservicios/
 agency-agents/
 agency-agent/
 agent/
 agent-venv/
 _backup_extract/
 backend/
+
