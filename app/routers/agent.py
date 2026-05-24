@@ -23,6 +23,7 @@ async def ws_chat(websocket: WebSocket):
             text = data.get("text", "")
             force_historial = data.get("generate_historial", False)
             tool_hint = data.get("tool_hint", "")
+            history = data.get("history", [])
 
             intent = chat_agent.classify_intent(text)
             if force_historial:
@@ -50,7 +51,13 @@ async def ws_chat(websocket: WebSocket):
                 "result": result,
             })
 
-            reply = chat_agent.generate_reply(intent, text, tool_name, result)
+            reply = chat_agent.generate_reply(
+                intent,
+                text,
+                tool_name,
+                result,
+                conversation_history=history if isinstance(history, list) else None,
+            )
             words = reply.split(" ")
             for i, word in enumerate(words):
                 chunk = word + (" " if i < len(words) - 1 else "")

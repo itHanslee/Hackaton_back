@@ -60,28 +60,34 @@ INTENT_TO_TOOL = {
 }
 
 SYSTEM_PROMPT = (
-    "Eres MediNote, el asistente virtual de la clinica MediNote. "
-    "Tu rol principal es ayudar a los pacientes con tareas administrativas: "
-    "agendar citas, mostrar medicos disponibles, consultar horarios, revisar "
-    "su historial clinico y orientar sobre el funcionamiento de la clinica. "
-    "\n\nQUE PUEDES hacer: "
-    "- Agendar y confirmar citas medicas. "
-    "- Mostrar especialistas disponibles y sus horarios. "
-    "- Resumir el historial clinico del paciente cuando este lo pida. "
-    "- Informar sobre medicamentos cubiertos por su EPS. "
-    "- Dar orientacion general sobre cuando consultar a un medico. "
-    "\n\nQUE NO debes hacer: "
-    "- NO actues como medico: no des diagnosticos, no recetes ni indiques tratamientos. "
-    "- NO ofrezcas 'iniciar una consulta medica' como si fueras un doctor virtual. "
-    "- Si el paciente describe sintomas concretos, sugierele agendar una cita con el "
-    "especialista adecuado en lugar de intentar diagnosticar. "
-    "\n\nEstilo: "
-    "- Responde en espanol claro, breve y profesional, con tono cercano. "
-    "- Si el usuario ya entrego datos (nombre, fecha, preferencia), NO los repreguntes. "
-    "- Cuando una tool ya te dio la informacion (medicos, horarios, cita creada), "
-    "presentala directamente, sin volver a preguntar lo mismo. "
-    "- Antes de crear definitivamente una cita, repite los datos clave (medico, "
-    "fecha, hora, EPS) y pide confirmacion final."
+    "Eres MediNote, asistente administrativo de una plataforma de salud en Colombia. "
+    "Tu prioridad absoluta es la veracidad operativa: nunca afirmes que una accion se ejecuto "
+    "si no existe confirmacion real en el resultado de la tool.\n\n"
+    "Objetivo principal:\n"
+    "- Ayudar a agendar citas, consultar disponibilidad, registrar pacientes, monitorear pacientes y "
+    "resumir historial clinico de forma simple y confiable.\n\n"
+    "Reglas criticas de verdad:\n"
+    "- Si el resultado de la tool tiene success=true, puedes afirmar la accion como confirmada.\n"
+    "- Si success=false o faltan datos, NO inventes ni supongas valores (nombres, documentos, telefonos, horas, IDs).\n"
+    "- Si no hay ejecucion confirmada, dilo claramente: 'Aun no se ha confirmado en el sistema'.\n"
+    "- No fabriques IDs, citas, pacientes ni historiales.\n\n"
+    "Manejo de datos faltantes (sin ser pesado):\n"
+    "- Pide solo los campos realmente faltantes y en un unico mensaje.\n"
+    "- No repitas preguntas ya respondidas en el historial.\n"
+    "- Si faltan varios datos, listalos juntos en formato corto.\n"
+    "- Si el usuario ya dio un dato aproximado, propon confirmacion en vez de volver a pedir desde cero.\n\n"
+    "Estilo de conversacion:\n"
+    "- Espanol claro, cercano y profesional.\n"
+    "- Frases cortas, accionables y faciles de escanear.\n"
+    "- Evita tono robotico y evita friccion innecesaria.\n"
+    "- Muestra pasos siguientes concretos cuando aplique.\n\n"
+    "Limites clinicos:\n"
+    "- No diagnosticar, no formular tratamientos ni medicacion.\n"
+    "- Si hay sintomas de alarma, sugerir consulta medica presencial o urgencias de forma prudente.\n\n"
+    "Formato recomendado de respuesta:\n"
+    "1) Estado: Confirmado / Pendiente / Requiere datos.\n"
+    "2) Resultado corto basado en tool_result.\n"
+    "3) Siguiente paso (solo uno o dos, sin saturar)."
 )
 
 _ai = AIService()
@@ -227,8 +233,14 @@ async def _crear_paciente_tool(db: Session, text: str, payload: dict[str, Any]) 
         paciente_in = {}
     extracted = _extract_patient_from_text(text)
     documento = _pick_value(payload, paciente_in, "documento", "cedula", "identificacion") or extracted["documento"]
+    nombre = _pick_value(payload, paciente_in, "nombre", "name") or extracted["nombre"]
+    missing = []
+    if not nombre:
+        missing.append("nombre")
     if not documento:
-        return {"success": False, "error": "Documento requerido"}
+        missing.append("documento")
+    if missing:
+        return {"success": False, "error": "Datos incompletos", "missing_fields": missing}
 
     existing = db.query(Paciente).filter(Paciente.cedula == documento).first()
     if existing:
@@ -243,7 +255,7 @@ async def _crear_paciente_tool(db: Session, text: str, payload: dict[str, Any]) 
 
     paciente = Paciente(
         cedula=documento,
-        nombre=_pick_value(payload, paciente_in, "nombre", "name") or extracted["nombre"] or "Paciente",
+        nombre=nombre,
         telefono=_pick_value(payload, paciente_in, "telefono", "phone"),
         fecha_nacimiento=_pick_value(payload, paciente_in, "fecha_nacimiento", "birth_date"),
         genero=str(payload.get("genero") or paciente_in.get("genero") or "").strip(),
@@ -494,6 +506,7 @@ def generate_reply(
     user_text: str,
     tool_name: str,
     tool_result: dict[str, Any],
+    conversation_history: list[dict[str, str]] | None = None,
     settings: Settings | None = None,
 ) -> str:
     settings = settings or get_settings()
@@ -501,6 +514,12 @@ def generate_reply(
     if client is None:
         return fallback_reply(intent, tool_result, tool_name, user_text)
     try:
+        history_snippet = "[]"
+        if conversation_history:
+            try:
+                history_snippet = json.dumps(conversation_history[-12:], ensure_ascii=False)
+            except Exception:
+                history_snippet = "[]"
         completion = client.chat.completions.create(
             model=settings.azure_openai_deployment,
             max_completion_tokens=1200,
@@ -509,6 +528,7 @@ def generate_reply(
                 {
                     "role": "user",
                     "content": (
+                        f"Historial reciente: {history_snippet}\n"
                         f"Usuario: {user_text}\n"
                         f"Intent: {intent}\n"
                         f"Tool: {tool_name}\n"
