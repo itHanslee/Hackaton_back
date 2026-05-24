@@ -42,13 +42,14 @@ async def test_chat_generar_historial(client):
     assert r.status_code == 200
     body = r.json()
     assert body["data"]["historial"] is not None
-    assert "motivo" in body["data"]["historial"]
+    assert "motivo_consulta" in body["data"]["historial"]
+    assert body["data"]["historial"]["alergias"] == "No definido"
 
 
 @pytest.mark.asyncio
-async def test_historiales_post(client):
+async def test_historiales_generate(client):
     r = await client.post(
-        "/historiales",
+        "/historiales/generate",
         json={"transcript": "Consulta por dolor abdominal. Diagnóstico: gastritis."},
     )
     assert r.status_code == 200
@@ -66,23 +67,10 @@ async def test_chat_validation_empty(client):
 
 
 @pytest.mark.asyncio
-async def test_historiales_returns_historial_id(client):
+async def test_historiales_generate_returns_id(client):
     r = await client.post(
-        "/historiales",
+        "/historiales/generate",
         json={"transcript": "Paciente con tos y fiebre."},
     )
     assert r.status_code == 200
     assert "historial_id" in r.json()["data"]
-
-
-@pytest.mark.asyncio
-async def test_historiales_context_motivo(client):
-    r = await client.post(
-        "/historiales",
-        json={
-            "transcript": "Consulta general.",
-            "context": {"motivo": "Control prenatal"},
-        },
-    )
-    assert r.status_code == 200
-    assert r.json()["data"]["historial"]["motivo"] == "Control prenatal"

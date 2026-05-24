@@ -1,27 +1,39 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class MedicamentoItem(BaseModel):
-    nombre: str
-    dosis: str = ""
-    frecuencia: str = ""
-    duracion: str = ""
+NO_DEFINIDO = "No definido"
+
+
+class MedicamentoDisponible(BaseModel):
+    nombre: str = NO_DEFINIDO
+    dosis: str = NO_DEFINIDO
+    frecuencia: str = NO_DEFINIDO
+
+
+class MedicamentoIdeal(BaseModel):
+    nombre: str = NO_DEFINIDO
+    razon: str = NO_DEFINIDO
+
+
+class MedicamentosHistorial(BaseModel):
+    disponibles_eps: list[MedicamentoDisponible] = Field(default_factory=list)
+    ideales_sugeridos: list[MedicamentoIdeal] = Field(default_factory=list)
 
 
 class HistorialClinico(BaseModel):
-    motivo_consulta: str
+    motivo_consulta: str = NO_DEFINIDO
     sintomas: list[str] = Field(default_factory=list)
-    diagnostico: str
-    plan_tratamiento: str
-    medicamentos_sugeridos: list[MedicamentoItem] = Field(default_factory=list)
+    diagnostico: str = NO_DEFINIDO
+    plan_tratamiento: str = NO_DEFINIDO
+    alergias: str = NO_DEFINIDO
+    notas_adicionales: str = NO_DEFINIDO
+    medicamentos: MedicamentosHistorial = Field(default_factory=MedicamentosHistorial)
 
 
 class ChatRequest(BaseModel):
-    """Unified chat body: text OR audio."""
-
     text: str | None = None
     audio: str | None = None
     mime_type: str = "audio/webm"
@@ -44,10 +56,17 @@ IntentType = Literal[
 ]
 
 
+class AppointmentSlots(BaseModel):
+    fecha: str | None = None
+    hora: str | None = None
+    especialidad: str | None = None
+
+
 class ChatResponseData(BaseModel):
     message: str
     detected_intent: IntentType
     slot_suggested: str | None = None
+    appointment_slots: AppointmentSlots | None = None
     transcript: str | None = None
     historial: HistorialClinico | None = None
 
@@ -63,6 +82,22 @@ class GenerateHistorialResponseData(BaseModel):
     historial: HistorialClinico
     session_id: str | None = None
 
+
+class HistorialConfirmRequest(BaseModel):
+    consulta_id: int
+    motivo_consulta: str
+    sintomas: list[str] | str = ""
+    diagnostico: str
+    plan_tratamiento: str
+    alergias: str | None = None
+    notas_adicionales: str | None = None
+    medicamentos: dict = Field(default_factory=dict)
+    confirmado_por_medico: bool = True
+    requiere_incapacidad: bool = False
+    incapacidad_dias: int | None = None
+    enviar_informe_email: bool = False
+
+
 class PacienteBase(BaseModel):
     cedula: str
     nombre: str
@@ -71,10 +106,11 @@ class PacienteBase(BaseModel):
     telefono: str | None = None
     eps_id: int
 
+
 class PacienteResponse(PacienteBase):
+    model_config = ConfigDict(from_attributes=True)
     id: int
-    class Config:
-        from_attributes = True
+
 
 class MedicoBase(BaseModel):
     cedula: str
@@ -82,15 +118,30 @@ class MedicoBase(BaseModel):
     especialidad: str
     eps_id: int
 
-class MedicoResponse(MedicoBase):
-    id: int
-    class Config:
-        from_attributes = True
 
-class Slot(BaseModel):
-    start_time: str
-    end_time: str
+class MedicoResponse(MedicoBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    tiene_firma: bool = False
+
+
+class EPSResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    nombre: str
+    tiene_logo: bool = False
+
+
+class MedicoProfileResponse(MedicoResponse):
+    email: str | None = None
+    firma_url: str | None = None
+
+
+class SlotResponse(BaseModel):
+    id: str
+    datetime: str
     available: bool
+
 
 class CitaCreate(BaseModel):
     paciente_id: int
@@ -98,19 +149,20 @@ class CitaCreate(BaseModel):
     fecha_hora: str
     motivo: str
 
+
 class CitaResponse(CitaCreate):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     estado: str
-    class Config:
-        from_attributes = True
+
 
 class MedicamentoResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     nombre: str
     descripcion: str | None = None
     eps_id: int
-    class Config:
-        from_attributes = True
+
 
 class HistorialCreate(BaseModel):
     consulta_id: int
@@ -118,27 +170,28 @@ class HistorialCreate(BaseModel):
     sintomas: str
     diagnostico: str
     plan_tratamiento: str
-    medicamentos_sugeridos: str | None = None
+    medicamentos_sugeridos: dict | None = None
     confirmado_por_medico: bool = False
     pdf_path: str | None = None
 
+
 class HistorialResponse(HistorialCreate):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: str | None = None
-    class Config:
-        from_attributes = True
+
 
 class ConsultaBase(BaseModel):
     cita_id: int
     audio_path: str | None = None
     transcripcion: str | None = None
 
+
 class ConsultaCreate(ConsultaBase):
     pass
 
+
 class ConsultaResponse(ConsultaBase):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: str | None = None
-    class Config:
-        from_attributes = True
-

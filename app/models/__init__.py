@@ -4,7 +4,9 @@ from app.models.schemas import (
     GenerateHistorialRequest,
     GenerateHistorialResponseData,
     HistorialClinico,
-    MedicamentoItem,
+    MedicamentoDisponible,
+    MedicamentoIdeal,
+    MedicamentosHistorial,
 )
 
 __all__ = [
@@ -13,5 +15,7 @@ __all__ = [
     "GenerateHistorialRequest",
     "GenerateHistorialResponseData",
     "HistorialClinico",
-    "MedicamentoItem",
+    "MedicamentoDisponible",
+    "MedicamentoIdeal",
+    "MedicamentosHistorial",
 ]

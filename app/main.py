@@ -1,28 +1,83 @@
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.auth_middleware import AuthMiddleware
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RateLimitMiddleware
 from app.core.responses import ok
-from app.routers import chat, historiales, transcribe, citas, medicos, pacientes, medicamentos, consultas
-from app.db.database import Base, SessionLocal, engine
-from app.models.db_models import EPS, Medico, Paciente
+from app.db.database import SessionLocal
+from app.db.schema_sync import sync_schema
+from app.db.seed import seed_database
+from app.routers import (
+    agent,
+    auth,
+    chat,
+    citas,
+    consultas,
+    eps,
+    historiales,
+    medicamentos,
+    medicos,
+    pacientes,
+    transcribe,
+)
+from app.services import groq_stt
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await groq_stt.init_http_client()
+    sync_schema()
+    if settings.seed_on_startup:
+        db = SessionLocal()
+        try:
+            seed_database(db)
+        except Exception:
+            logger.exception("Seed failed — continuing without demo data")
+            db.rollback()
+        finally:
+            db.close()
+
+    if settings.mock_ai:
+        logger.info("MOCK_AI=true — IA desactivada (respuestas de prueba).")
+    elif not (settings.google_api_key or "").strip():
+        logger.warning(
+            "GOOGLE_API_KEY no configurada. STT y LLM Gemini fallarán hasta configurarla."
+        )
+    else:
+        try:
+            import google.genai  # noqa: F401
+        except ImportError:
+            logger.warning("Falta google-genai. Ejecuta: pip install google-genai")
+        else:
+            logger.info(
+                "IA activa: Gemini (%s) — STT audio directo + chat/historial.",
+                settings.gemini_model,
+            )
+
+    yield
+    await groq_stt.close_http_client()
+
 
 app = FastAPI(
     title=settings.app_name,
-    description="Backend 1 — IA: transcripción, chat e historial clínico (MediNote AI)",
-    version="0.1.0",
+    description="MediNote AI — Backend unificado (Gemini + agente conversacional + auth + PDF)",
+    version="0.2.0",
     debug=settings.debug,
+    lifespan=lifespan,
 )
 
 register_exception_handlers(app)
 
+app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -32,39 +87,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(historiales.router)
 app.include_router(transcribe.router)
+app.include_router(agent.router)
 app.include_router(citas.router)
 app.include_router(medicos.router)
+app.include_router(eps.router)
 app.include_router(pacientes.router)
 app.include_router(medicamentos.router)
 app.include_router(consultas.router)
 
-@app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    try:
-        if db.query(EPS).count() == 0:
-            db.add_all([EPS(id=1, nombre="Sura"), EPS(id=2, nombre="Sanitas"), EPS(id=3, nombre="Nueva EPS")])
-        if db.query(Medico).count() == 0:
-            db.add_all([
-                Medico(id=1, cedula="900001", nombre="Dra. Ana Ruiz", especialidad="Medicina general", eps_id=1),
-                Medico(id=2, cedula="900002", nombre="Dr. Carlos Mejia", especialidad="Medicina interna", eps_id=2),
-                Medico(id=3, cedula="900003", nombre="Dra. Laura Gomez", especialidad="Pediatria", eps_id=3),
-            ])
-        if db.query(Paciente).count() == 0:
-            db.add_all([
-                Paciente(id=1, cedula="1023456789", nombre="Maria Garcia Lopez", fecha_nacimiento="", genero="", telefono="3001234567", eps_id=1),
-                Paciente(id=2, cedula="100000002", nombre="Carlos Rodriguez", fecha_nacimiento="", genero="", telefono="3000000002", eps_id=2),
-            ])
-        db.commit()
-    finally:
-        db.close()
-
-
 
 @app.get("/health")
 async def health():
-    return ok({"status": "ok"})
+    return ok({
+        "status": "ok",
+        "gemini_configured": bool(settings.google_api_key),
+        "agent": {
+            "azure_configured": bool(settings.azure_api_key),
+            "azure_deployment": settings.azure_openai_deployment,
+            "groq_configured": bool(settings.groq_api_key),
+            "groq_model": settings.groq_stt_model,
+        },
+        "auth_disabled": settings.auth_disabled,
+    })

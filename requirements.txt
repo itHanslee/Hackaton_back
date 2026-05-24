@@ -4,13 +4,13 @@ pydantic>=2.9.0
 pydantic-settings>=2.6.0
 python-multipart>=0.0.12
 httpx>=0.27.0
+google-genai>=1.0.0
 openai>=1.54.0
-anthropic>=0.39.0
+argon2-cffi>=23.1.0
+PyJWT>=2.8.0
 pytest>=8.3.0
 pytest-asyncio>=0.24.0
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
 reportlab>=4.0.0
-# chatbot_agent extras
 websockets>=12.0
-python-dotenv>=1.0.0

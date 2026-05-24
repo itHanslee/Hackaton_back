@@ -1,17 +1,25 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import List
+
+from app.core.responses import error_response, ok
 from app.db.database import get_db
-from app.models.db_models import MedicamentoEPS
-from app.models.schemas import MedicamentoResponse
+from app.services.medicamentos import MedicamentosService
 
 router = APIRouter(prefix="/medicamentos", tags=["medicamentos"])
 
-@router.get("", response_model=List[MedicamentoResponse])
-def get_medicamentos(diagnostico: str | None = None, db: Session = Depends(get_db)):
-    query = db.query(MedicamentoEPS)
-    if diagnostico:
-        # Mock filtering by diagnostico for the hackathon
-        # Usually requires a relationship or a full-text search
-        query = query.filter(MedicamentoEPS.descripcion.ilike(f"%{diagnostico}%"))
-    return query.all()
+
+@router.get("")
+def get_medicamentos(
+    diagnostico: str | None = None,
+    eps_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    if not diagnostico or eps_id is None:
+        return error_response(
+            "VALIDATION_ERROR",
+            "Los parámetros 'diagnostico' y 'eps_id' son requeridos.",
+            400,
+        )
+
+    result = MedicamentosService().get_by_diagnostico(db, eps_id, diagnostico)
+    return ok(result)

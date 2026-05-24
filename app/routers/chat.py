@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from app.core.responses import error_response, ok
 from app.models.schemas import ChatRequest, ChatResponseData
 from app.services.ai import AIService, ServiceError
-from app.services.intents import intent_reply_message, suggest_slot
+from app.services.intents import intent_reply_message
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 _ai = AIService()
@@ -12,7 +12,7 @@ _ai = AIService()
 @router.post("")
 async def chat(body: ChatRequest):
     """
-    Recibe texto o audio (base64). Devuelve intención y mensaje.
+    Recibe texto o audio (base64). Devuelve intención, slots de cita (fecha/hora/especialidad) y mensaje.
     Con generate_historial=true incluye el JSON clínico en la respuesta.
     """
     text = body.text or ""
@@ -43,12 +43,18 @@ async def chat(body: ChatRequest):
         return error_response("CHAT_FAILED", "Error al procesar el mensaje.", 502)
 
     message = result.message or intent_reply_message(result.intent)
-    slot_suggested = suggest_slot(result.intent, text)
+
+    appointment_slots = None
+    slot_suggested = None
+    if result.intent == "agendar_cita":
+        appointment_slots = await _ai.extract_appointment_slots(text)
+        slot_suggested = appointment_slots.especialidad
 
     payload = ChatResponseData(
         message=message,
         detected_intent=result.intent,
         slot_suggested=slot_suggested,
+        appointment_slots=appointment_slots,
         transcript=transcript,
         historial=result.historial,
     )

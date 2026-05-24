@@ -11,9 +11,10 @@ FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "historial_sample.j
 def test_fixture_matches_historial_schema():
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     historial = HistorialClinico.model_validate(data)
-    assert historial.motivo
+    assert historial.motivo_consulta
     assert historial.diagnostico
     assert isinstance(historial.sintomas, list)
+    assert "disponibles_eps" in historial.medicamentos.model_dump()
 
 
 @pytest.mark.asyncio
@@ -25,10 +26,10 @@ async def test_mock_historial_derives_from_transcript():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         r = await ac.post(
-            "/historiales",
+            "/historiales/generate",
             json={"transcript": "Consulta por dolor abdominal. Diagnóstico: gastritis."},
         )
     assert r.status_code == 200
     historial = r.json()["data"]["historial"]
-    combined = f"{historial['motivo']} {historial['diagnostico']}".lower()
+    combined = f"{historial['motivo_consulta']} {historial['diagnostico']}".lower()
     assert "gastritis" in combined or "abdominal" in combined
