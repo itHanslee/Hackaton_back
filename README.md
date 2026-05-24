@@ -50,11 +50,15 @@ copy .env.example .env
 
 ## Ejecutar
 
+Desde la **raíz del repo** (`HACKATON2026_BACK`), no desde subcarpetas:
+
 ```powershell
+cd C:\Users\danic\OneDrive\Documents\HACKATON2026_BACK
+.\.venv\Scripts\Activate.ps1
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Docs: http://localhost:8000/docs
+Docs: http://localhost:8000/docs · Health: http://localhost:8000/health
 
 ## Demo sin API keys
 
@@ -98,9 +102,10 @@ Login: `POST /auth/medico/login` o `POST /auth/paciente/login`
 | POST | `/auth/medico/login` | Login médico |
 | POST | `/auth/paciente/login` | Login paciente |
 | POST | `/chat` | Intención + mensaje (Gemini) |
-| POST | `/historiales` | Generar historial clínico |
-| POST | `/historiales/{id}/confirm` | Confirmar + PDF + email |
+| POST | `/historiales/generate` | Generar JSON clínico (sin persistir) |
+| POST | `/historiales` | Confirmar historial + PDF + email |
 | GET | `/historiales/{id}/pdf` | Descargar PDF |
+| POST | `/consultas/procesar` | Audio → transcripción + historial |
 | WS | `/ws/transcribe` | Transcripción en vivo (Gemini) |
 | WS | `/ws/chat` | Agente conversacional con tools |
 | POST | `/transcribe` | STT Groq (multipart) |
@@ -126,7 +131,7 @@ HACKATON2026_BACK/
 └── README.md
 ```
 
-**No uses la carpeta `backend/`** — era una copia legacy duplicada. Todo vive en `app/`.
+**No uses una carpeta `backend/` separada** — todo el código está en `app/` en la raíz.
 
 ## Tests
 
@@ -134,10 +139,10 @@ HACKATON2026_BACK/
 pytest tests/ -q
 ```
 
-Los tests usan `MOCK_AI=true`, `AUTH_DISABLED=true` y SQLite de prueba.
+34 tests — usan `MOCK_AI=true`, `AUTH_DISABLED=true` y SQLite de prueba.
 
 ## Notas
 
-- El agente (`/ws/chat`) escribe directamente en BD; no requiere segundo servicio.
-- Carpeta `backend/` en el repo es legacy — **no usar**; canónico es `app/` en la raíz.
+- El agente (`/ws/chat`) escribe directamente en BD; un solo puerto **8000**.
+- Copia tu configuración a `.env` en la raíz (ver `.env.example`).
 - Frontend demo local en `frontend/` (gitignored).
