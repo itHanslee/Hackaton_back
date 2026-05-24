@@ -1,0 +1,14 @@
+{
+  "motivo": "Cefalea tensional",
+  "sintomas": ["Dolor de cabeza frontal", "Fatiga leve"],
+  "diagnostico": "Cefalea tensional (R51)",
+  "plan": "Reposo, hidratación, control en 48h si persiste",
+  "medicamentos": [
+    {
+      "nombre": "Acetaminofén",
+      "dosis": "500 mg",
+      "frecuencia": "cada 8 horas",
+      "duracion": "3 días"
+    }
+  ]
+}
