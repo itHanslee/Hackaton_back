@@ -10,12 +10,7 @@ def _eps_name(eps: EPS | None) -> str:
     return eps.nombre if eps else ""
 
 
-def _parse_sintomas(value: str | list | None) -> list[str]:
-    if isinstance(value, list):
-        return [str(s).strip() for s in value if str(s).strip()]
-    if not value:
-        return []
-    return [s.strip() for s in str(value).split(",") if s.strip()]
+from app.services.clinical_normalizers import parse_sintomas
 
 
 def _medicamentos_to_frontend(payload: dict | None) -> list[dict]:
@@ -85,7 +80,7 @@ def historial_to_frontend(
     return {
         "id": historial.id,
         "motivo": historial.motivo_consulta or "",
-        "sintomas": _parse_sintomas(historial.sintomas),
+        "sintomas": parse_sintomas(historial.sintomas),
         "diagnostico": historial.diagnostico or "",
         "plan": historial.plan_tratamiento or "",
         "alergias": meds_payload.get("alergias", ""),
@@ -115,7 +110,7 @@ def apply_frontend_historial(historial: Historial, body: dict) -> None:
     if "plan" in body:
         historial.plan_tratamiento = body.get("plan") or ""
     if "sintomas" in body:
-        historial.sintomas = ", ".join(_parse_sintomas(body.get("sintomas")))
+        historial.sintomas = ", ".join(parse_sintomas(body.get("sintomas")))
 
     extra = dict(historial.medicamentos_sugeridos or {})
     if "alergias" in body:

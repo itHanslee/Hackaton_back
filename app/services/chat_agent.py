@@ -432,8 +432,10 @@ async def _monitor_paciente_tool(db: Session, text: str, payload: dict[str, Any]
 
 async def _crear_cita_tool(db: Session, text: str, payload: dict[str, Any]) -> dict[str, Any]:
     paciente_in = payload.get("paciente") or {}
-    medico_id = int(payload.get("medico_id") or 1)
-    slot_id = int(payload.get("slot_id") or medico_id * 100 + 1)
+    medico_id = int(payload.get("medico_id") or 0)
+    slot_id = int(payload.get("slot_id") or 0)
+    if not medico_id:
+        return {"success": False, "error": "medico_id requerido (use buscar_medico primero)"}
     paciente_id = normalize_paciente_id(payload.get("paciente_id") or paciente_in.get("id"))
 
     if not paciente_id:
@@ -466,8 +468,31 @@ async def _crear_cita_tool(db: Session, text: str, payload: dict[str, Any]) -> d
     if not medico:
         return {"success": False, "error": "Medico no encontrado"}
 
-    slot_index = max(0, (slot_id % 100) - 1)
-    fecha_hora = datetime.utcnow().replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(hours=slot_index)
+    fecha_hora: datetime | None = None
+    slot_datetime = payload.get("slot_datetime") or payload.get("fecha_hora")
+    if slot_datetime:
+        try:
+            fecha_hora = datetime.fromisoformat(str(slot_datetime).replace("Z", "+00:00"))
+            if fecha_hora.tzinfo:
+                fecha_hora = fecha_hora.replace(tzinfo=None)
+        except ValueError:
+            return {"success": False, "error": "slot_datetime inválido"}
+
+    if fecha_hora is None and slot_id:
+        target_date = payload.get("fecha") or payload.get("date")
+        if isinstance(target_date, str) and "T" in target_date:
+            target_date = target_date.split("T")[0]
+        slots = _list_slots(db, medico_id, target_date if isinstance(target_date, str) else None)
+        selected = next((s for s in slots if int(s["id"]) == slot_id), None)
+        if selected:
+            try:
+                fecha_hora = datetime.fromisoformat(selected["datetime"])
+            except ValueError:
+                pass
+
+    if fecha_hora is None:
+        return {"success": False, "error": "Slot no disponible; use buscar_medico y seleccione un horario"}
+
     cita = Cita(
         paciente_id=paciente.id,
         medico_id=medico.id,
@@ -513,7 +538,7 @@ async def _generar_historial_tool(
         return {"success": True, "historial": historial}
     except Exception as exc:
         logger.warning("generar_historial failed: %s", exc)
-        return {"success": True, "historial": _mock_historial(text)}
+        return {"success": False, "error": "No se pudo generar el historial clínico", "historial": None}
 
 
 async def _consulta_medica_tool(text: str) -> dict[str, Any]:
@@ -522,7 +547,7 @@ async def _consulta_medica_tool(text: str) -> dict[str, Any]:
         return {"success": True, "message": result.message or ""}
     except Exception as exc:
         logger.warning("consulta_medica failed: %s", exc)
-        return {"success": True, "message": ""}
+        return {"success": False, "error": "No se pudo procesar la consulta médica", "message": ""}
 
 
 async def execute_tool(

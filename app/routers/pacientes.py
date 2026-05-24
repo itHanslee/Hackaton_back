@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.deps import get_auth_claims
 from app.core.responses import error_response, ok
 from app.db.database import get_db
 from app.models.db_models import Cita, Historial, Paciente
 from app.models.schemas import CitaResponse, HistorialResponse
+from app.services.access_control import medico_has_paciente
 from app.services.clinical_context import fetch_prior_historiales
 from app.services.frontend_serializers import paciente_detalle, paciente_resumen
 
@@ -38,6 +40,32 @@ def _serialize_cita(cita: Cita) -> dict:
         motivo=cita.motivo,
         estado=cita.estado,
     ).model_dump()
+
+
+def _authorize_paciente_access(
+    request: Request,
+    db: Session,
+    paciente_id: int,
+) -> tuple[bool, str | None]:
+    settings = get_settings()
+    if settings.auth_disabled:
+        return True, None
+
+    claims = get_auth_claims(request)
+    if not claims:
+        return False, "Autenticación requerida."
+
+    role = claims.get("role")
+    subject_id = claims.get("subject_id")
+    if role == "paciente":
+        if subject_id != paciente_id:
+            return False, "No puede acceder a otro paciente."
+        return True, None
+    if role == "medico":
+        if not medico_has_paciente(db, int(subject_id), paciente_id):
+            return False, "No tiene relación clínica con este paciente."
+        return True, None
+    return False, "Rol no autorizado."
 
 
 def _historiales_for_paciente(db: Session, paciente_id: int) -> list[Historial]:
@@ -107,21 +135,25 @@ def get_paciente(id: int, request: Request, db: Session = Depends(get_db)):
         return ok(paciente_detalle(db, paciente))
 
     if claims and claims.get("role") == "medico":
-        return ok(paciente_detalle(db, paciente, claims["subject_id"]))
+        medico_id = int(claims["subject_id"])
+        if not get_settings().auth_disabled and not medico_has_paciente(db, medico_id, id):
+            return error_response("FORBIDDEN", "No tiene relación clínica con este paciente.", 403)
+        return ok(paciente_detalle(db, paciente, medico_id))
 
     return error_response("FORBIDDEN", "Autenticación requerida.", 403)
 
 
 @router.get("/{id}/historial-pdf")
 def download_paciente_historial_pdf(id: int, request: Request, db: Session = Depends(get_db)):
-    claims = get_auth_claims(request)
     paciente = db.query(Paciente).filter(Paciente.id == id).first()
     if not paciente:
         return error_response("NOT_FOUND", "Paciente no encontrado", 404)
 
-    if claims and claims.get("role") == "paciente" and claims.get("subject_id") != id:
-        return error_response("FORBIDDEN", "No puede descargar otro historial.", 403)
+    allowed, msg = _authorize_paciente_access(request, db, id)
+    if not allowed:
+        return error_response("FORBIDDEN", msg or "Acceso denegado.", 403)
 
+    claims = get_auth_claims(request)
     detalle = paciente_detalle(
         db,
         paciente,
@@ -147,10 +179,14 @@ def download_paciente_historial_pdf(id: int, request: Request, db: Session = Dep
 
 
 @router.get("/{id}/historial")
-def get_paciente_historial(id: int, db: Session = Depends(get_db)):
+def get_paciente_historial(id: int, request: Request, db: Session = Depends(get_db)):
     paciente = db.query(Paciente).filter(Paciente.id == id).first()
     if not paciente:
         return error_response("NOT_FOUND", "Paciente no encontrado", 404)
+
+    allowed, msg = _authorize_paciente_access(request, db, id)
+    if not allowed:
+        return error_response("FORBIDDEN", msg or "Acceso denegado.", 403)
 
     historiales = _historiales_for_paciente(db, id)
     return ok([_serialize_historial(h) for h in historiales])

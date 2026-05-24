@@ -12,12 +12,8 @@ _PUBLIC_EXACT = {
     ("GET", "/health"),
     ("POST", "/auth/paciente/login"),
     ("POST", "/auth/medico/login"),
-    ("POST", "/citas"),
-    ("POST", "/pacientes"),
     ("GET", "/medicos"),
     ("GET", "/eps"),
-    ("POST", "/transcribe"),
-    ("POST", "/transcribe/json"),
 }
 
 _UI_PREFIXES = ("/dev-ui",)
@@ -103,12 +99,15 @@ def _authorize(method: str, path: str, claims: dict[str, Any]) -> bool:
             return True
         if method == "GET" and _PACIENTE_HISTORIAL_PDF.match(path):
             return True
+        if method == "GET" and _PACIENTE_OWN_HISTORIAL.match(path):
+            return True
         if method == "GET" and path.startswith("/citas/calendario"):
             return True
         if method == "GET" and _CITA_DETAIL.match(path):
             return True
-        match = _PACIENTE_OWN_HISTORIAL.match(path)
-        if match and method == "GET":
+        if method == "POST" and path == "/citas":
+            return True
+        if method in {"POST", "GET"} and path.startswith("/transcribe"):
             return True
         return False
 
@@ -125,6 +124,8 @@ def _authorize(method: str, path: str, claims: dict[str, Any]) -> bool:
         if match and method == "GET":
             return str(subject_id) == match.group(1)
         if path.startswith("/historiales/") and path.endswith("/pdf") and method == "GET":
+            return True
+        if method == "POST" and path == "/citas":
             return True
         return False
 

@@ -2,7 +2,7 @@
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from io import BytesIO
 
@@ -243,31 +243,4 @@ def generate_incapacidad_pdf(
 
 
 def incapacidad_data_as_ocr_fallback(data: IncapacidadPdfData) -> dict:
-    return {
-        "numero_incapacidad": data.numero_incapacidad,
-        "fecha_documento": data.fecha_documento,
-        "paciente_nombre": data.paciente_nombre,
-        "paciente_tipo_documento": data.paciente_tipo_documento,
-        "paciente_numero_documento": data.paciente_numero_documento,
-        "tipo_paciente": data.tipo_paciente,
-        "sexo": data.sexo,
-        "fecha_nacimiento": data.fecha_nacimiento,
-        "edad_texto": data.edad_texto,
-        "eps_detectada": data.eps_detectada,
-        "entidad_codigo": data.entidad_codigo,
-        "medico_nombre": data.medico_nombre,
-        "registro_medico": data.registro_medico,
-        "medico_especialidad": data.medico_especialidad,
-        "diagnostico_codigo": data.diagnostico_codigo,
-        "diagnostico_descripcion": data.diagnostico_descripcion,
-        "diagnostico_relacionado": data.diagnostico_relacionado,
-        "fecha_inicio": data.fecha_inicio,
-        "fecha_fin": data.fecha_fin,
-        "dias": data.dias,
-        "grupo_servicio": data.grupo_servicio,
-        "modalidad_servicio": data.modalidad_servicio,
-        "origen": data.origen,
-        "causa": data.causa,
-        "incapacidad_retroactiva": data.incapacidad_retroactiva,
-        "prorroga": data.prorroga,
-    }
+    return asdict(data)

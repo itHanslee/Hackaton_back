@@ -39,6 +39,10 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     await groq_stt.init_http_client()
     sync_schema()
+    if settings.jwt_secret.strip() in {"", "change-me-in-production", "test-secret-key"} and not settings.debug:
+        logger.warning(
+            "JWT_SECRET usa valor por defecto — configure un secreto fuerte en producción."
+        )
     if settings.seed_on_startup:
         db = SessionLocal()
         try:

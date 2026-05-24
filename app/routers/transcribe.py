@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.core.audio import ALLOWED_MIME_TYPES, AudioValidationError
 from app.core.config import get_settings
+from app.core.ws_auth import require_ws_claims
 from app.core.responses import ok, safe_client_message
 from app.services import groq_stt
 from app.services.transcription import TranscriptionManager
@@ -34,6 +35,9 @@ async def ws_transcribe(websocket: WebSocket):
     Cliente → {"type":"stop"}
     Servidor → {"type":"started"|"partial"|"final"|"error", ...}
     """
+    claims = await require_ws_claims(websocket, roles={"medico"})
+    if claims is None:
+        return
     await websocket.accept()
     session_id: str | None = None
     stop_event = asyncio.Event()

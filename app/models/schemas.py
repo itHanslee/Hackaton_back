@@ -103,6 +103,26 @@ class HistorialConfirmRequest(BaseModel):
     enviar_informe_email: bool = False
 
 
+class HistorialUpdateRequest(BaseModel):
+    """PUT /historiales/{id} — campos del frontend Monwe."""
+
+    motivo: str | None = None
+    motivo_consulta: str | None = None
+    sintomas: list[str] | str | None = None
+    diagnostico: str | None = None
+    plan: str | None = None
+    plan_tratamiento: str | None = None
+    alergias: str | None = None
+    notas_adicionales: str | None = None
+    medicamentos: list | dict | None = None
+    requiere_incapacidad: bool | None = None
+    incapacidad_dias: int | None = Field(default=None, ge=1, le=365)
+    incapacidad_recomendaciones: str | None = None
+    paciente_eps: str | None = None
+
+    def to_apply_dict(self) -> dict:
+        return self.model_dump(exclude_none=True)
+
 class PacienteBase(BaseModel):
     cedula: str
     nombre: str

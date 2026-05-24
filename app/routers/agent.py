@@ -9,6 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.core.responses import safe_client_message
+from app.core.ws_auth import require_ws_claims
+
 from app.services import chat_agent
 
 router = APIRouter(tags=["agent"])
@@ -18,6 +21,9 @@ _executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ws_stream")
 
 @router.websocket("/ws/chat")
 async def ws_chat(websocket: WebSocket):
+    claims = await require_ws_claims(websocket, roles={"medico"})
+    if claims is None:
+        return
     await websocket.accept()
     booking_context: dict[str, object] = {}
     try:
@@ -46,6 +52,10 @@ async def ws_chat(websocket: WebSocket):
                     data["medico_id"] = booking_context["medico_id"]
                 if "slot_id" not in data and booking_context.get("slot_id") is not None:
                     data["slot_id"] = booking_context["slot_id"]
+                if "slot_datetime" not in data and booking_context.get("slot_datetime") is not None:
+                    data["slot_datetime"] = booking_context["slot_datetime"]
+                if "fecha" not in data and booking_context.get("fecha") is not None:
+                    data["fecha"] = booking_context["fecha"]
 
             tool_info = chat_agent.TOOLS[tool_name]
             tool_id = f"tool-{uuid.uuid4().hex[:8]}"
@@ -64,6 +74,8 @@ async def ws_chat(websocket: WebSocket):
                     try:
                         booking_context["medico_id"] = int(medicos[0]["id"])
                         booking_context["slot_id"] = int(slots[0]["id"])
+                        booking_context["slot_datetime"] = slots[0].get("datetime")
+                        booking_context["fecha"] = result.get("fecha_consultada")
                     except Exception:
                         pass
 
@@ -114,6 +126,6 @@ async def ws_chat(websocket: WebSocket):
     except Exception as exc:
         logger.exception("WS chat error")
         try:
-            await websocket.send_json({"type": "error", "message": str(exc)})
+            await websocket.send_json({"type": "error", "message": safe_client_message(exc)})
         except Exception:
             pass

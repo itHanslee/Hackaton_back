@@ -116,7 +116,7 @@ def run_pipeline(job_id: str) -> None:
             "registro_medico": ocr_data.get("registro_medico") or fallback.get("registro_medico"),
             "medico_nombre": ocr_data.get("medico_nombre") or fallback.get("medico_nombre"),
             "tipo_documento": ocr_data.get("paciente_tipo_documento") or "CC",
-            "numero_documento": ocr_data.get("registro_medico") or fallback.get("registro_medico"),
+            "numero_documento": ocr_data.get("paciente_numero_documento") or fallback.get("paciente_numero_documento"),
         }
         rethus_data = validar_rethus(rethus_payload)
         _update_job(db, job, rethus_json=rethus_data, estado="adres", paso_actual=3)
@@ -153,6 +153,18 @@ def start_radicacion_job(db: Session, historial_id: int, medico_id: int) -> Inca
     bundle = load_historial_bundle(db, historial_id)
     if not bundle:
         raise ValueError("Historial no encontrado")
+
+    active = (
+        db.query(IncapacidadRadicacionJob)
+        .filter(
+            IncapacidadRadicacionJob.historial_id == historial_id,
+            IncapacidadRadicacionJob.estado.in_(("pendiente", "ocr", "rethus", "adres", "reporte")),
+        )
+        .order_by(IncapacidadRadicacionJob.created_at.desc())
+        .first()
+    )
+    if active:
+        return active
 
     pdf_path = bundle.historial.incapacidad_pdf_path
     if not pdf_path or not os.path.isfile(pdf_path):

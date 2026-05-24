@@ -15,10 +15,12 @@ from app.models.schemas import (
     GenerateHistorialResponseData,
     HistorialClinico,
     HistorialConfirmRequest,
+    HistorialUpdateRequest,
 )
 from app.services.ai import AIService
 from app.services.clinical_context import load_patient_clinical_context, merge_context
 from app.services.clinical_enrichment import build_eps_formulary_context, enrich_historial_for_patient
+from app.services.clinical_normalizers import sintomas_to_db
 from app.services.email import send_historial_email
 from app.services.frontend_serializers import apply_frontend_historial, historial_to_frontend
 from app.services.pdf import PdfContext, generate_pdf
@@ -30,9 +32,7 @@ _ai = AIService()
 
 
 def _normalize_sintomas(sintomas: list[str] | str) -> str:
-    if isinstance(sintomas, list):
-        return ", ".join(sintomas)
-    return sintomas or ""
+    return sintomas_to_db(sintomas)
 
 
 def _build_medicamentos_payload(body: HistorialConfirmRequest) -> dict:
@@ -233,7 +233,12 @@ def get_historial(id: int, request: Request, db: Session = Depends(get_db)):
 
 
 @router.put("/{id}")
-def update_historial(id: int, body: dict, request: Request, db: Session = Depends(get_db)):
+def update_historial(
+    id: int,
+    body: HistorialUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     historial = db.query(Historial).filter(Historial.id == id).first()
     if not historial:
         return error_response("NOT_FOUND", "Historial no encontrado.", 404)
@@ -246,7 +251,7 @@ def update_historial(id: int, body: dict, request: Request, db: Session = Depend
     if consulta and not _medico_owns_consulta(db, consulta, medico_id):
         return error_response("FORBIDDEN", "No puede editar este historial.", 403)
 
-    apply_frontend_historial(historial, body)
+    apply_frontend_historial(historial, body.to_apply_dict())
     db.commit()
     db.refresh(historial)
 
