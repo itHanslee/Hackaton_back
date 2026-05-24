@@ -5,6 +5,7 @@ import logging
 from sqlalchemy import inspect, text
 
 from app.db.database import Base, engine
+from app.db.indexes import ensure_indexes
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ _PG_COLUMN_PATCHES: dict[str, list[tuple[str, str]]] = {
 
 def sync_schema() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_indexes()
     if engine.dialect.name != "postgresql":
         return
 
