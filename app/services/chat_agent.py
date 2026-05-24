@@ -291,9 +291,60 @@ async def _crear_paciente_tool(db: Session, text: str, payload: dict[str, Any]) 
     return {"success": True, "patient": patient, "created": True}
 
 
+def _extract_date_from_text(text: str) -> str | None:
+    """Extrae fecha del texto del usuario (manana, lunes, en 3 dias, etc)."""
+    import re as _re
+    lower = text.lower()
+    today = datetime.utcnow().date()
+    # Fecha ISO exacta
+    m = _re.search(r"(\d{4}-\d{2}-\d{2})", text)
+    if m:
+        return m.group(1)
+    # "pasado mañana" antes que "mañana"
+    if "pasado ma" in lower:
+        return (today + timedelta(days=2)).strftime("%Y-%m-%d")
+    if "ma\u00f1ana" in lower or "manana" in lower:
+        return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    # "en X días / dias"
+    m = _re.search(r"en\s+(\d+)\s+d[ií]a", lower)
+    if m:
+        return (today + timedelta(days=int(m.group(1)))).strftime("%Y-%m-%d")
+    # "para X días"
+    m = _re.search(r"para\s+(\d+)\s+d[ií]a", lower)
+    if m:
+        return (today + timedelta(days=int(m.group(1)))).strftime("%Y-%m-%d")
+    # "próxima semana / proxima semana"
+    if "pr\u00f3xima semana" in lower or "proxima semana" in lower or "siguiente semana" in lower:
+        return (today + timedelta(days=7)).strftime("%Y-%m-%d")
+    # Día de la semana
+    days_map = {"lunes": 0, "martes": 1, "miercoles": 2, "mi\u00e9rcoles": 2,
+                "jueves": 3, "viernes": 4, "sabado": 5, "s\u00e1bado": 5, "domingo": 6}
+    for day_name, weekday in days_map.items():
+        if day_name in lower:
+            days_ahead = (weekday - today.weekday()) % 7 or 7
+            return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+    # Fecha DD/MM o DD-MM
+    m = _re.search(r"(\d{1,2})[/\-](\d{1,2})", text)
+    if m:
+        day, month = int(m.group(1)), int(m.group(2))
+        year = today.year
+        try:
+            from datetime import date as _date
+            candidate = _date(year, month, day)
+            if candidate < today:
+                candidate = _date(year + 1, month, day)
+            return candidate.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return None
+
+
 async def _buscar_medico_tool(db: Session, text: str, payload: dict[str, Any]) -> dict[str, Any]:
     especialidad = str(payload.get("especialidad") or "").lower()
-    target_date = str(payload.get("fecha") or payload.get("date") or "").strip() or None
+    target_date = (
+        str(payload.get("fecha") or payload.get("date") or "").strip()
+        or _extract_date_from_text(text)
+    )
     medicos = _list_medicos(db)
     filtered = [
         m for m in medicos
@@ -305,6 +356,13 @@ async def _buscar_medico_tool(db: Session, text: str, payload: dict[str, Any]) -
         return {"success": False, "error": "No hay medicos disponibles"}
     medico_id = int(filtered[0]["id"])
     raw_slots = _list_slots(db, medico_id, target_date)
+    if not raw_slots:
+        for offset in range(1, 6):
+            next_date = (datetime.utcnow().date() + timedelta(days=offset)).strftime("%Y-%m-%d")
+            raw_slots = _list_slots(db, medico_id, next_date)
+            if raw_slots:
+                target_date = next_date
+                break
     slots = [
         {
             "id": str(s.get("id")),

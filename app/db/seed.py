@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,17 @@ from app.models.db_models import (
 )
 
 
+_EXTRA_MEDICOS = [
+    {"cedula": "1004", "nombre": "Dr. Jorge Ramírez", "especialidad": "Pediatría", "email": "jorge.ramirez@medinote.local", "eps": "Sura"},
+    {"cedula": "1005", "nombre": "Dra. Camila Torres", "especialidad": "Dermatología", "email": "camila.torres@medinote.local", "eps": "Sanitas"},
+    {"cedula": "1006", "nombre": "Dr. Andrés Mora", "especialidad": "Ortopedia", "email": "andres.mora@medinote.local", "eps": "Sura"},
+    {"cedula": "1007", "nombre": "Dra. Valentina Ríos", "especialidad": "Ginecología", "email": "valentina.rios@medinote.local", "eps": "Sanitas"},
+    {"cedula": "1008", "nombre": "Dr. Felipe Castro", "especialidad": "Neurología", "email": "felipe.castro@medinote.local", "eps": "Sura"},
+    {"cedula": "1009", "nombre": "Dra. Sofía Herrera", "especialidad": "Psiquiatría", "email": "sofia.herrera@medinote.local", "eps": "Sanitas"},
+    {"cedula": "1010", "nombre": "Dr. Ricardo Vargas", "especialidad": "Cardiología", "email": "ricardo.vargas@medinote.local", "eps": "Sanitas"},
+]
+
+
 def ensure_auth_credentials(db: Session) -> None:
     """Asigna email/password demo si faltan (BD compartida ya sembrada)."""
     demo_emails = {
@@ -21,6 +33,23 @@ def ensure_auth_credentials(db: Session) -> None:
         "2001": "carlos.rodriguez@example.com",
         "2002": "laura.martinez@example.com",
     }
+    eps_cache: dict[str, Any] = {}
+    for extra in _EXTRA_MEDICOS:
+        if not db.query(Medico).filter(Medico.cedula == extra["cedula"]).first():
+            eps_name = extra["eps"]
+            if eps_name not in eps_cache:
+                eps_obj = db.query(EPS).filter(EPS.nombre == eps_name).first()
+                eps_cache[eps_name] = eps_obj
+            eps_obj = eps_cache.get(eps_name)
+            db.add(Medico(
+                cedula=extra["cedula"],
+                nombre=extra["nombre"],
+                especialidad=extra["especialidad"],
+                email=extra["email"],
+                eps_id=eps_obj.id if eps_obj else None,
+                password_hash=hash_password("medico123"),
+            ))
+    db.commit()
     changed = False
     for medico in db.query(Medico).all():
         if not medico.password_hash:
