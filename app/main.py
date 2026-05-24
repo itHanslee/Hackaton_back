@@ -74,18 +74,28 @@ app = FastAPI(
 
 register_exception_handlers(app)
 
-_cors_origins = settings.effective_cors_origins
 # CORSMiddleware debe ser el más externo (se añade al final).
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimitMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins if _cors_origins else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-)
+if settings.cors_allow_all:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+else:
+    _cors_origins = settings.effective_cors_origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins if _cors_origins else ["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
 
 app.include_router(auth.router)
 app.include_router(chat.router)

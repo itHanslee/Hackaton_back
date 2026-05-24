@@ -119,7 +119,14 @@ class Settings(BaseSettings):
         return bool(value)
 
     @property
+    def cors_allow_all(self) -> bool:
+        raw = self.cors_origins.strip().lower()
+        return raw in {"*", "all"}
+
+    @property
     def cors_origin_list(self) -> list[str]:
+        if self.cors_allow_all:
+            return []
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
@@ -135,6 +142,8 @@ class Settings(BaseSettings):
                 "http://127.0.0.1:5500",
                 "http://localhost:5173",
                 "http://127.0.0.1:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:5175/"
             ):
                 if extra not in origins:
                     origins.append(extra)
