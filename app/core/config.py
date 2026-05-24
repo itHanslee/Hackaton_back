@@ -122,6 +122,24 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
+    @property
+    def effective_cors_origins(self) -> list[str]:
+        """Orígenes permitidos; en debug incluye null (file://) y el propio backend."""
+        origins = list(self.cors_origin_list)
+        if self.debug:
+            for extra in (
+                "null",
+                "http://localhost:8000",
+                "http://127.0.0.1:8000",
+                "http://localhost:5500",
+                "http://127.0.0.1:5500",
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+            ):
+                if extra not in origins:
+                    origins.append(extra)
+        return origins
+
 
 @lru_cache
 def get_settings() -> Settings:

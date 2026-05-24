@@ -61,6 +61,16 @@ def _append_image_if_exists(story: list, path: str | None, width: float, height:
         story.append(Spacer(1, 8))
 
 
+def _append_medico_firma(story: list, medico: Medico | None) -> None:
+    if not medico:
+        return
+    if medico.firma_imagen:
+        story.append(Image(BytesIO(medico.firma_imagen), width=120, height=50))
+        story.append(Spacer(1, 8))
+        return
+    _append_image_if_exists(story, medico.firma_path, 120, 50)
+
+
 def generate_pdf(historial: Historial, context: PdfContext | None = None) -> str:
     """Genera un PDF a partir del objeto Historial y lo guarda en el sistema de archivos."""
     ctx = context or PdfContext()
@@ -119,7 +129,7 @@ def generate_pdf(historial: Historial, context: PdfContext | None = None) -> str
 
     if ctx.medico:
         story.append(Paragraph("<b>Firma del médico tratante:</b>", styles["Heading2"]))
-        _append_image_if_exists(story, ctx.medico.firma_path, 120, 50)
+        _append_medico_firma(story, ctx.medico)
         story.append(
             Paragraph(
                 f"<b>Dr(a). {ctx.medico.nombre}</b><br/>"

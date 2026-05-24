@@ -146,3 +146,97 @@ async def test_paciente_cannot_book_for_other(auth_client):
     )
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_medico_me_citas(auth_client):
+    from datetime import datetime, timedelta
+
+    login = await auth_client.post(
+        "/auth/medico/login",
+        json={"cedula": "1001", "password": "medico123"},
+    )
+    token = login.json()["data"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    slot_time = (datetime.utcnow() + timedelta(days=2)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    )
+    create = await auth_client.post(
+        "/citas",
+        json={
+            "paciente_id": 1,
+            "medico_id": 1,
+            "fecha_hora": slot_time.isoformat(),
+            "motivo": "Control calendario",
+        },
+    )
+    assert create.status_code == 200
+
+    month = slot_time.strftime("%Y-%m")
+    r = await auth_client.get(f"/medicos/me/citas?month={month}", headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["total"] >= 1
+    assert any(c["motivo"] == "Control calendario" for c in data["items"])
+    assert data["items"][0]["paciente_nombre"]
+
+
+@pytest.mark.asyncio
+async def test_medico_me_citas_forbidden_for_paciente(auth_client):
+    login = await auth_client.post(
+        "/auth/paciente/login",
+        json={"cedula": "2001", "password": "paciente123"},
+    )
+    token = login.json()["data"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r = await auth_client.get("/medicos/me/citas", headers=headers)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_medico_me_citas(auth_client):
+    from datetime import datetime, timedelta
+
+    login = await auth_client.post(
+        "/auth/medico/login",
+        json={"cedula": "1001", "password": "medico123"},
+    )
+    token = login.json()["data"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    slot_time = (datetime.utcnow() + timedelta(days=2)).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    )
+    create = await auth_client.post(
+        "/citas",
+        json={
+            "paciente_id": 1,
+            "medico_id": 1,
+            "fecha_hora": slot_time.isoformat(),
+            "motivo": "Control calendario",
+        },
+    )
+    assert create.status_code == 200
+
+    month = slot_time.strftime("%Y-%m")
+    r = await auth_client.get(f"/medicos/me/citas?month={month}", headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["total"] >= 1
+    assert any(c["motivo"] == "Control calendario" for c in data["items"])
+    assert data["items"][0]["paciente_nombre"]
+
+
+@pytest.mark.asyncio
+async def test_medico_me_citas_forbidden_for_paciente(auth_client):
+    login = await auth_client.post(
+        "/auth/paciente/login",
+        json={"cedula": "2001", "password": "paciente123"},
+    )
+    token = login.json()["data"]["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r = await auth_client.get("/medicos/me/citas", headers=headers)
+    assert r.status_code == 403

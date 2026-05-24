@@ -8,6 +8,7 @@ from app.core.responses import error_response, ok
 from app.db.database import get_db
 from app.models.db_models import Cita, Medico, Paciente
 from app.models.schemas import CitaCreate, CitaResponse
+from app.services.frontend_serializers import cita_to_calendario
 from app.services.slots import SlotsService
 
 router = APIRouter(prefix="/citas", tags=["citas"])
@@ -21,6 +22,44 @@ def _parse_fecha_hora(value: str) -> datetime | None:
     if parsed.tzinfo is not None:
         parsed = parsed.replace(tzinfo=None)
     return parsed.replace(microsecond=0)
+
+
+@router.get("/calendario")
+def list_calendario(
+    request: Request,
+    medico_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    claims = get_auth_claims(request)
+    if not claims or claims.get("role") != "medico":
+        return error_response("FORBIDDEN", "Solo médicos autenticados.", 403)
+
+    target_medico_id = medico_id or claims["subject_id"]
+    if medico_id and medico_id != claims["subject_id"]:
+        return error_response("FORBIDDEN", "No puede ver el calendario de otro médico.", 403)
+
+    citas = (
+        db.query(Cita)
+        .filter(Cita.medico_id == target_medico_id)
+        .order_by(Cita.fecha_hora.asc())
+        .all()
+    )
+    return ok([cita_to_calendario(db, c) for c in citas])
+
+
+@router.get("/{cita_id}")
+def get_cita(cita_id: int, request: Request, db: Session = Depends(get_db)):
+    claims = get_auth_claims(request)
+    if not claims or claims.get("role") != "medico":
+        return error_response("FORBIDDEN", "Solo médicos autenticados.", 403)
+
+    cita = db.query(Cita).filter(Cita.id == cita_id).first()
+    if not cita:
+        return error_response("NOT_FOUND", "Cita no encontrada.", 404)
+    if cita.medico_id != claims["subject_id"]:
+        return error_response("FORBIDDEN", "No puede ver citas de otro médico.", 403)
+
+    return ok(cita_to_calendario(db, cita))
 
 
 @router.post("")

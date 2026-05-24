@@ -158,6 +158,11 @@ class CitaResponse(CitaCreate):
     estado: str
 
 
+class MedicoCitaCalendarItem(CitaResponse):
+    paciente_nombre: str
+    paciente_cedula: str
+
+
 class MedicamentoResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

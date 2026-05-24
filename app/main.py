@@ -1,8 +1,10 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.auth_middleware import AuthMiddleware
 from app.core.config import get_settings
@@ -49,19 +51,14 @@ async def lifespan(app: FastAPI):
     if settings.mock_ai:
         logger.info("MOCK_AI=true — IA desactivada (respuestas de prueba).")
     elif not (settings.google_api_key or "").strip():
-        logger.warning(
-            "GOOGLE_API_KEY no configurada. STT y LLM Gemini fallarán hasta configurarla."
-        )
+        logger.warning("GOOGLE_API_KEY no configurada.")
     else:
         try:
             import google.genai  # noqa: F401
         except ImportError:
-            logger.warning("Falta google-genai. Ejecuta: pip install google-genai")
+            logger.warning("Falta google-genai.")
         else:
-            logger.info(
-                "IA activa: Gemini (%s) — STT audio directo + chat/historial.",
-                settings.gemini_model,
-            )
+            logger.info("IA activa: Gemini (%s).", settings.gemini_model)
 
     yield
     await groq_stt.close_http_client()
@@ -69,22 +66,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    description="MediNote AI — Backend unificado (Gemini + agente conversacional + auth + PDF)",
-    version="0.2.0",
+    description="MediNote AI — Backend unificado",
+    version="0.3.0",
     debug=settings.debug,
     lifespan=lifespan,
 )
 
 register_exception_handlers(app)
 
+_cors_origins = settings.effective_cors_origins
+# CORSMiddleware debe ser el más externo (se añade al final).
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins if _cors_origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 app.include_router(auth.router)
@@ -99,6 +99,15 @@ app.include_router(pacientes.router)
 app.include_router(medicamentos.router)
 app.include_router(consultas.router)
 
+_frontend_dir = Path(__file__).resolve().parents[1] / "frontend"
+if settings.debug and _frontend_dir.is_dir():
+    app.mount(
+        "/dev-ui",
+        StaticFiles(directory=str(_frontend_dir), html=True),
+        name="dev-ui",
+    )
+    logger.info("Frontend de prueba: http://127.0.0.1:%s/dev-ui/", settings.port)
+
 
 @app.get("/health")
 async def health():
@@ -107,9 +116,7 @@ async def health():
         "gemini_configured": bool(settings.google_api_key),
         "agent": {
             "azure_configured": bool(settings.azure_api_key),
-            "azure_deployment": settings.azure_openai_deployment,
             "groq_configured": bool(settings.groq_api_key),
-            "groq_model": settings.groq_stt_model,
         },
         "auth_disabled": settings.auth_disabled,
     })

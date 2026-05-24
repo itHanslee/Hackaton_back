@@ -18,7 +18,10 @@ def fetch_prior_historiales(db: Session, paciente_id: int) -> list[Historial]:
         db.query(Historial)
         .join(Consulta, Historial.consulta_id == Consulta.id)
         .join(Cita, Consulta.cita_id == Cita.id)
-        .filter(Cita.paciente_id == paciente_id)
+        .filter(
+            Cita.paciente_id == paciente_id,
+            Historial.confirmado_por_medico.is_(True),
+        )
         .order_by(Historial.created_at.desc())
         .all()
     )

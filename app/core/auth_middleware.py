@@ -1,4 +1,4 @@
-import re
+﻿import re
 from typing import Any
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -20,8 +20,13 @@ _PUBLIC_EXACT = {
     ("POST", "/transcribe/json"),
 }
 
+_UI_PREFIXES = ("/dev-ui",)
+
 _MEDICO_SLOTS = re.compile(r"^/medicos/\d+/slots$")
 _EPS_LOGO = re.compile(r"^/eps/\d+/logo$")
+_PACIENTE_DETAIL = re.compile(r"^/pacientes/(\d+)$")
+_PACIENTE_HISTORIAL_PDF = re.compile(r"^/pacientes/(\d+)/historial-pdf$")
+_CITA_DETAIL = re.compile(r"^/citas/(\d+)$")
 
 _MEDICO_PREFIXES = [
     "/chat",
@@ -62,10 +67,16 @@ def _extract_token(request: Request) -> str | None:
     return request.query_params.get("token")
 
 
+def _is_ui_public(path: str) -> bool:
+    return any(path == prefix or path.startswith(prefix + "/") for prefix in _UI_PREFIXES)
+
+
 def _is_public(method: str, path: str) -> bool:
     if method == "OPTIONS":
         return True
     if (method, path) in _PUBLIC_EXACT:
+        return True
+    if _is_ui_public(path):
         return True
     if method == "GET" and _MEDICO_SLOTS.match(path):
         return True
@@ -82,21 +93,37 @@ def _authorize(method: str, path: str, claims: dict[str, Any]) -> bool:
     role = claims.get("role")
     subject_id = claims.get("subject_id")
 
+    if role == "medico":
+        if _requires_medico(path):
+            return True
+        if method == "GET" and path == "/pacientes":
+            return True
+        if method == "GET" and _PACIENTE_DETAIL.match(path):
+            return True
+        if method == "GET" and _PACIENTE_HISTORIAL_PDF.match(path):
+            return True
+        if method == "GET" and path.startswith("/citas/calendario"):
+            return True
+        if method == "GET" and _CITA_DETAIL.match(path):
+            return True
+        match = _PACIENTE_OWN_HISTORIAL.match(path)
+        if match and method == "GET":
+            return True
+        return False
+
     if role == "paciente":
         if path in _PACIENTE_ME_PATHS and method == "GET":
             return True
+        detail_match = _PACIENTE_DETAIL.match(path)
+        if detail_match and method == "GET":
+            return str(subject_id) == detail_match.group(1)
+        pdf_match = _PACIENTE_HISTORIAL_PDF.match(path)
+        if pdf_match and method == "GET":
+            return str(subject_id) == pdf_match.group(1)
         match = _PACIENTE_OWN_HISTORIAL.match(path)
         if match and method == "GET":
             return str(subject_id) == match.group(1)
         if path.startswith("/historiales/") and path.endswith("/pdf") and method == "GET":
-            return True
-        return False
-
-    if role == "medico":
-        if _requires_medico(path):
-            return True
-        match = _PACIENTE_OWN_HISTORIAL.match(path)
-        if match and method == "GET":
             return True
         return False
 

@@ -20,6 +20,7 @@ from app.services.ai import AIService
 from app.services.clinical_context import load_patient_clinical_context, merge_context
 from app.services.clinical_enrichment import enrich_historial_for_patient
 from app.services.email import send_historial_email
+from app.services.frontend_serializers import apply_frontend_historial, historial_to_frontend
 from app.services.pdf import PdfContext, generate_pdf
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,30 @@ def _build_pdf_context(db: Session, consulta: Consulta) -> PdfContext:
     return PdfContext(medico=medico, eps=eps)
 
 
+def _apply_confirm_body(historial: Historial, body: HistorialConfirmRequest) -> None:
+    historial.motivo_consulta = body.motivo_consulta
+    historial.sintomas = _normalize_sintomas(body.sintomas)
+    historial.diagnostico = body.diagnostico
+    historial.plan_tratamiento = body.plan_tratamiento
+    historial.medicamentos_sugeridos = _build_medicamentos_payload(body)
+    historial.confirmado_por_medico = body.confirmado_por_medico
+
+
+def _finalize_historial_pdf(
+    historial: Historial,
+    pdf_context: PdfContext,
+    db: Session,
+) -> str | None:
+    try:
+        pdf_path = generate_pdf(historial, context=pdf_context)
+        historial.pdf_path = pdf_path
+        db.commit()
+        return pdf_path
+    except Exception:
+        logger.exception("PDF generation failed for historial %s", historial.id)
+        return None
+
+
 def _medico_owns_consulta(db: Session, consulta: Consulta, medico_id: int) -> bool:
     cita = db.query(Cita).filter(Cita.id == consulta.cita_id).first()
     return bool(cita and cita.medico_id == medico_id)
@@ -108,19 +133,35 @@ def create_historial(
         db.query(Historial).filter(Historial.consulta_id == body.consulta_id).first()
     )
     if existing:
-        pdf_url = f"/historiales/{existing.id}/pdf"
+        _apply_confirm_body(existing, body)
+        db.commit()
+        db.refresh(existing)
+
         if not existing.pdf_path or not os.path.isfile(existing.pdf_path or ""):
-            try:
-                pdf_path = generate_pdf(existing, context=pdf_context)
-                existing.pdf_path = pdf_path
-                db.commit()
-            except Exception:
-                logger.exception("PDF regeneration failed for historial %s", existing.id)
+            if _finalize_historial_pdf(existing, pdf_context, db) is None:
+                return error_response("PDF_ERROR", "No se pudo generar el PDF.", 500)
+
+        email_sent = False
+        if body.confirmado_por_medico and body.enviar_informe_email:
+            cita = db.query(Cita).filter(Cita.id == consulta.cita_id).first()
+            paciente = (
+                db.query(Paciente).filter(Paciente.id == cita.paciente_id).first()
+                if cita
+                else None
+            )
+            if paciente:
+                email_sent = send_historial_email(
+                    paciente,
+                    existing,
+                    requiere_incapacidad=body.requiere_incapacidad,
+                    incapacidad_dias=body.incapacidad_dias,
+                )
+
         return ok(
             {
                 "historial_id": existing.id,
-                "pdf_url": pdf_url,
-                "email_sent": False,
+                "pdf_url": f"/historiales/{existing.id}/pdf",
+                "email_sent": email_sent,
                 "reused": True,
             }
         )
@@ -138,12 +179,7 @@ def create_historial(
     db.commit()
     db.refresh(historial)
 
-    try:
-        pdf_path = generate_pdf(historial, context=pdf_context)
-        historial.pdf_path = pdf_path
-        db.commit()
-    except Exception:
-        logger.exception("PDF generation failed for historial %s", historial.id)
+    if _finalize_historial_pdf(historial, pdf_context, db) is None:
         return error_response("PDF_ERROR", "No se pudo generar el PDF.", 500)
 
     email_sent = False
@@ -171,6 +207,132 @@ def create_historial(
             "email_sent": email_sent,
         }
     )
+
+
+@router.get("/{id}")
+def get_historial(id: int, request: Request, db: Session = Depends(get_db)):
+    historial = db.query(Historial).filter(Historial.id == id).first()
+    if not historial:
+        return error_response("NOT_FOUND", "Historial no encontrado.", 404)
+
+    auth = require_medico(request)
+    if auth:
+        _, medico_id = auth
+        consulta = db.query(Consulta).filter(Consulta.id == historial.consulta_id).first()
+        if consulta and not _medico_owns_consulta(db, consulta, medico_id):
+            return error_response("FORBIDDEN", "No puede ver este historial.", 403)
+
+    consulta = db.query(Consulta).filter(Consulta.id == historial.consulta_id).first()
+    paciente = None
+    if consulta:
+        cita = db.query(Cita).filter(Cita.id == consulta.cita_id).first()
+        if cita:
+            paciente = db.query(Paciente).filter(Paciente.id == cita.paciente_id).first()
+
+    return ok(historial_to_frontend(historial, paciente=paciente))
+
+
+@router.put("/{id}")
+def update_historial(id: int, body: dict, request: Request, db: Session = Depends(get_db)):
+    historial = db.query(Historial).filter(Historial.id == id).first()
+    if not historial:
+        return error_response("NOT_FOUND", "Historial no encontrado.", 404)
+
+    auth = require_medico(request)
+    if not auth:
+        return error_response("FORBIDDEN", "Solo médicos autenticados.", 403)
+    _, medico_id = auth
+    consulta = db.query(Consulta).filter(Consulta.id == historial.consulta_id).first()
+    if consulta and not _medico_owns_consulta(db, consulta, medico_id):
+        return error_response("FORBIDDEN", "No puede editar este historial.", 403)
+
+    apply_frontend_historial(historial, body)
+    db.commit()
+    db.refresh(historial)
+
+    paciente = None
+    if consulta:
+        cita = db.query(Cita).filter(Cita.id == consulta.cita_id).first()
+        if cita:
+            paciente = db.query(Paciente).filter(Paciente.id == cita.paciente_id).first()
+    return ok(historial_to_frontend(historial, paciente=paciente))
+
+
+@router.post("/{id}/firmar")
+def firmar_historial(id: int, request: Request, db: Session = Depends(get_db)):
+    historial = db.query(Historial).filter(Historial.id == id).first()
+    if not historial:
+        return error_response("NOT_FOUND", "Historial no encontrado.", 404)
+
+    auth = require_medico(request)
+    if not auth:
+        return error_response("FORBIDDEN", "Solo médicos autenticados.", 403)
+    _, medico_id = auth
+
+    consulta = db.query(Consulta).filter(Consulta.id == historial.consulta_id).first()
+    if consulta and not _medico_owns_consulta(db, consulta, medico_id):
+        return error_response("FORBIDDEN", "No puede firmar este historial.", 403)
+
+    historial.confirmado_por_medico = True
+    pdf_context = _build_pdf_context(db, consulta) if consulta else PdfContext()
+    try:
+        pdf_path = generate_pdf(historial, context=pdf_context)
+        historial.pdf_path = pdf_path
+    except Exception:
+        logger.exception("PDF generation failed for historial %s", id)
+        return error_response("PDF_ERROR", "No se pudo generar el PDF.", 500)
+
+    if consulta:
+        cita = db.query(Cita).filter(Cita.id == consulta.cita_id).first()
+        if cita:
+            cita.estado = "terminada"
+    db.commit()
+    db.refresh(historial)
+
+    paciente = None
+    if consulta:
+        cita = db.query(Cita).filter(Cita.id == consulta.cita_id).first()
+        if cita:
+            paciente = db.query(Paciente).filter(Paciente.id == cita.paciente_id).first()
+    return ok(historial_to_frontend(historial, paciente=paciente))
+
+
+@router.post("/{id}/enviar")
+def enviar_historial(id: int, request: Request, db: Session = Depends(get_db)):
+    historial = db.query(Historial).filter(Historial.id == id).first()
+    if not historial:
+        return error_response("NOT_FOUND", "Historial no encontrado.", 404)
+
+    auth = require_medico(request)
+    if not auth:
+        return error_response("FORBIDDEN", "Solo médicos autenticados.", 403)
+    _, medico_id = auth
+
+    consulta = db.query(Consulta).filter(Consulta.id == historial.consulta_id).first()
+    if consulta and not _medico_owns_consulta(db, consulta, medico_id):
+        return error_response("FORBIDDEN", "No puede enviar este historial.", 403)
+
+    historial.confirmado_por_medico = True
+    if consulta:
+        cita = db.query(Cita).filter(Cita.id == consulta.cita_id).first()
+        paciente = (
+            db.query(Paciente).filter(Paciente.id == cita.paciente_id).first()
+            if cita
+            else None
+        )
+        if paciente:
+            send_historial_email(
+                paciente,
+                historial,
+                requiere_incapacidad=bool(
+                    (historial.medicamentos_sugeridos or {}).get("requiere_incapacidad")
+                ),
+                incapacidad_dias=(historial.medicamentos_sugeridos or {}).get("incapacidad_dias"),
+            )
+        if cita:
+            cita.estado = "terminada"
+    db.commit()
+    return ok({"ok": True})
 
 
 @router.get("/{id}/pdf")

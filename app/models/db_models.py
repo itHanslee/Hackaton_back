@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -41,6 +41,7 @@ class Medico(Base):
     password_hash = Column(String, nullable=True)
     eps_id = Column(Integer, ForeignKey("eps.id"))
     firma_path = Column(String, nullable=True)
+    firma_imagen = Column(LargeBinary, nullable=True)
     citas = relationship("Cita", back_populates="medico")
 
 
